@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <title>Synthetic demo portrait of Liis Tamm</title>
+  <rect width="800" height="800" fill="#46351c"/>
+  <circle cx="110" cy="105" r="240" fill="#b67a32" opacity=".52"/>
+  <path d="M0 691 800 458v342H0z" fill="#2a2316"/>
+  <g fill="none" stroke="#f5d994" stroke-width="6" opacity=".24">
+    <path d="M-40 618c206-161 435-212 732-157"/><path d="M-28 681c227-151 473-191 780-120"/>
+  </g>
+  <path d="M191 800c22-181 101-267 209-267s187 86 209 267z" fill="#f0eadb"/>
+  <path d="M249 800c25-142 73-213 151-213s126 71 151 213z" fill="#d88735"/>
+  <path d="M364 538h72v94c-21 23-51 23-72 0z" fill="#c98b68"/>
+  <ellipse cx="400" cy="353" rx="128" ry="165" fill="#d99c76"/>
+  <path d="M273 360c-7-128 47-203 136-203 83 0 130 57 122 169-42-50-90-71-151-64-42 5-75 39-107 98z" fill="#2c211c"/>
+  <path d="M518 243c85 21 119 83 97 154-17 55-67 71-112 30 42-10 60-40 47-79-14-44-31-76-32-105z" fill="#2c211c"/>
+  <g fill="#28231f">
+    <ellipse cx="350" cy="365" rx="10" ry="7"/><ellipse cx="452" cy="365" rx="10" ry="7"/>
+  </g>
+  <path d="M368 442c22 17 44 17 66 0" fill="none" stroke="#8c5145" stroke-linecap="round" stroke-width="8"/>
+  <path d="M326 596 400 664l74-68" fill="none" stroke="#f6eee0" stroke-width="12"/>
+  <text x="400" y="755" fill="#fffaf0" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="4" text-anchor="middle">RADA · SYNTHETIC DEMO</text>
+</svg>

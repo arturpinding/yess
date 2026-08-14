@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <title>Synthetic demo portrait of Sofia Lind</title>
+  <rect width="800" height="800" fill="#2e3049"/>
+  <circle cx="684" cy="130" r="250" fill="#7079a0" opacity=".48"/>
+  <path d="M0 689 800 469v331H0z" fill="#21263b"/>
+  <g fill="none" stroke="#d8dff3" stroke-width="7" opacity=".23">
+    <path d="m44 596 310-78"/><path d="m484 501 275-68"/><path d="m572 81 137 137"/>
+  </g>
+  <path d="M196 800c22-179 100-264 204-264s182 85 204 264z" fill="#ececf2"/>
+  <path d="M249 800c25-140 73-210 151-210s126 70 151 210z" fill="#596799"/>
+  <path d="M364 539h72v94c-22 24-50 24-72 0z" fill="#e0aa86"/>
+  <ellipse cx="400" cy="354" rx="129" ry="165" fill="#edbc98"/>
+  <path d="M272 361c-8-129 44-205 134-205 91 0 139 70 123 196-36-61-81-92-138-90-50 2-84 35-119 99z" fill="#9b523d"/>
+  <path d="M518 221c86 18 125 76 107 144-14 56-66 78-114 39 41-13 58-44 43-83-17-43-34-72-36-100z" fill="#9b523d"/>
+  <g fill="#343039">
+    <ellipse cx="350" cy="365" rx="10" ry="7"/><ellipse cx="452" cy="365" rx="10" ry="7"/>
+  </g>
+  <path d="M368 443c21 15 44 15 66 0" fill="none" stroke="#9b5d59" stroke-linecap="round" stroke-width="8"/>
+  <path d="M323 615h154" stroke="#d6dcf1" stroke-width="12"/>
+  <path d="m606 312-98 488" stroke="#d5b56a" stroke-width="16" opacity=".7"/>
+  <text x="400" y="755" fill="#fafaff" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="4" text-anchor="middle">RADA · SYNTHETIC DEMO</text>
+</svg>

@@ -14,5 +14,25 @@ clips/
 *.pth
 *.pth.tar
 
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Local configuration and runtime data
+.env
+.env.local
+.env.*.local
+!.env.example
+.DS_Store
+npm-debug.log*
+
+# Generated demo media (source scripts and manifests stay tracked)
+public/demo-media/generated/
+
 # Local scratch
 tmp.txt

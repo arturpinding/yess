@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <title>Synthetic demo portrait of Marta Kowalska</title>
+  <rect width="800" height="800" fill="#43243b"/>
+  <circle cx="686" cy="132" r="245" fill="#a95573" opacity=".48"/>
+  <path d="M0 674 800 438v362H0z" fill="#2b1a2b"/>
+  <g fill="none" stroke="#f2b8cb" stroke-width="7" opacity=".22">
+    <path d="M-56 556c212-100 443-117 710-52"/><path d="M24 618c228-82 467-83 742-2"/>
+  </g>
+  <path d="M194 800c23-179 101-264 206-264s183 85 206 264z" fill="#f2e6e9"/>
+  <path d="M250 800c26-139 72-209 150-209s124 70 150 209z" fill="#a94363"/>
+  <path d="M364 539h72v94c-22 24-50 24-72 0z" fill="#e4b18e"/>
+  <ellipse cx="400" cy="355" rx="129" ry="165" fill="#efc09a"/>
+  <path d="M270 369c-2-135 43-214 137-214 96 0 139 82 124 210-30-64-68-95-121-102-61-8-104 26-140 106z" fill="#a47749"/>
+  <path d="M287 242c49-76 173-111 234 10-60-31-162-33-234-10z" fill="#a47749"/>
+  <path d="M278 330c4 139 19 187 69 232-71-24-103-92-88-173z" fill="#a47749"/>
+  <g fill="#34302e">
+    <ellipse cx="350" cy="366" rx="10" ry="7"/><ellipse cx="452" cy="366" rx="10" ry="7"/>
+  </g>
+  <path d="M368 444c22 15 44 15 66 0" fill="none" stroke="#a4615e" stroke-linecap="round" stroke-width="8"/>
+  <path d="M330 603 400 659l70-56" fill="none" stroke="#f7d6df" stroke-width="12"/>
+  <text x="400" y="755" fill="#fff7fa" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="4" text-anchor="middle">RADA · SYNTHETIC DEMO</text>
+</svg>

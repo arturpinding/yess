@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <title>Synthetic demo portrait of Anu Saar</title>
+  <rect width="800" height="800" fill="#173838"/>
+  <circle cx="134" cy="126" r="235" fill="#3e7c72" opacity=".5"/>
+  <path d="M0 642c196-52 345-41 474 8 106 40 214 49 326 23v127H0z" fill="#102b31"/>
+  <g fill="none" stroke="#a7ddd1" stroke-linecap="round" stroke-width="8" opacity=".27">
+    <path d="M36 566h248"/><path d="M81 601h304"/><path d="M550 523h201"/>
+  </g>
+  <path d="M198 800c22-181 99-267 202-267s180 86 202 267z" fill="#e4eee9"/>
+  <path d="M249 800c25-142 73-213 151-213s126 71 151 213z" fill="#307c70"/>
+  <path d="M363 537h74v96c-22 24-52 24-74 0z" fill="#bf7d5e"/>
+  <ellipse cx="400" cy="354" rx="130" ry="166" fill="#ce8d69"/>
+  <path d="M270 359c-4-129 47-204 137-204 88 0 136 65 123 187-37-56-79-84-135-83-54 0-89 34-125 100z" fill="#392821"/>
+  <circle cx="507" cy="205" r="55" fill="#392821"/>
+  <path d="M513 270c56 89 36 178-23 238" fill="none" stroke="#392821" stroke-linecap="round" stroke-width="27"/>
+  <g fill="#2d2723">
+    <ellipse cx="350" cy="365" rx="10" ry="7"/><ellipse cx="452" cy="365" rx="10" ry="7"/>
+  </g>
+  <path d="M368 443c22 16 44 16 66 0" fill="none" stroke="#824b43" stroke-linecap="round" stroke-width="8"/>
+  <path d="m316 626 84 70 84-70" fill="none" stroke="#d6e6df" stroke-width="11"/>
+  <text x="400" y="755" fill="#f5faf7" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="4" text-anchor="middle">RADA · SYNTHETIC DEMO</text>
+</svg>

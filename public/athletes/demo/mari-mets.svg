@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <title>Synthetic demo portrait of Mari Mets</title>
+  <rect width="800" height="800" fill="#123536"/>
+  <circle cx="124" cy="128" r="210" fill="#2c6660" opacity=".55"/>
+  <path d="M0 670 800 390v410H0z" fill="#0b2428"/>
+  <g fill="none" stroke="#b9ddd0" stroke-width="5" opacity=".25">
+    <path d="m58 175 82-82 82 82-82 82z"/><path d="m617 93 72 72-72 72-72-72z"/>
+  </g>
+  <path d="M206 800c18-177 94-260 194-260s176 83 194 260z" fill="#e7eee8"/>
+  <path d="M254 800c22-136 68-208 146-208s124 72 146 208z" fill="#bc4b3f"/>
+  <path d="M363 545h74v90c-22 24-52 24-74 0z" fill="#e1ad8d"/>
+  <ellipse cx="400" cy="356" rx="131" ry="164" fill="#efc09e"/>
+  <path d="M274 357c-6-115 38-194 126-194 90 0 139 75 126 199-31-82-87-109-156-90-34 9-61 41-96 85z" fill="#6a302d"/>
+  <circle cx="499" cy="188" r="58" fill="#6a302d"/>
+  <path d="M281 296c78-55 167-51 239 7" fill="none" stroke="#dceae3" stroke-width="35"/>
+  <path d="M280 296c80-34 163-33 241 7" fill="none" stroke="#bb4b40" stroke-width="15"/>
+  <g fill="#263b3b">
+    <ellipse cx="350" cy="365" rx="10" ry="7"/><ellipse cx="452" cy="365" rx="10" ry="7"/>
+  </g>
+  <path d="M367 443c22 17 45 17 67 0" fill="none" stroke="#9b5f55" stroke-linecap="round" stroke-width="8"/>
+  <path d="M400 592v208" stroke="#e9dcd0" stroke-width="8" opacity=".8"/>
+  <text x="400" y="755" fill="#f5faf7" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="4" text-anchor="middle">RADA · SYNTHETIC DEMO</text>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <title>Synthetic demo portrait of Aino Laine</title>
+  <rect width="800" height="800" fill="#172c45"/>
+  <circle cx="675" cy="120" r="260" fill="#3a6980" opacity=".5"/>
+  <path d="M0 710 800 515v285H0z" fill="#101e31"/>
+  <g fill="#c4e0e5" opacity=".34">
+    <circle cx="108" cy="153" r="8"/><circle cx="177" cy="92" r="5"/><circle cx="648" cy="286" r="7"/><circle cx="705" cy="339" r="4"/>
+  </g>
+  <path d="M198 800c20-178 96-263 202-263s182 85 202 263z" fill="#d6e9ee"/>
+  <path d="M250 800c26-138 72-207 150-207s124 69 150 207z" fill="#1f6591"/>
+  <path d="M363 538h74v92c-22 24-52 24-74 0z" fill="#e5b48f"/>
+  <ellipse cx="400" cy="353" rx="130" ry="163" fill="#f2c6a2"/>
+  <path d="M273 355c-3-125 50-197 135-197 92 0 139 74 119 203-27-69-68-99-124-100-56 0-93 29-130 94z" fill="#b98b4b"/>
+  <path d="M527 310c79 63 83 157 29 238-19 28-12 51 13 73-58-13-80-54-57-103 29-63 26-139 15-208z" fill="#b98b4b"/>
+  <path d="M279 283c79-45 162-43 242 5" fill="none" stroke="#e9f2f4" stroke-width="36"/>
+  <path d="M279 283c80-25 161-24 243 5" fill="none" stroke="#306f95" stroke-width="13"/>
+  <g fill="#243848">
+    <ellipse cx="350" cy="361" rx="10" ry="7"/><ellipse cx="452" cy="361" rx="10" ry="7"/>
+  </g>
+  <path d="M369 440c20 14 42 14 63 0" fill="none" stroke="#a9655c" stroke-linecap="round" stroke-width="8"/>
+  <path d="M316 626 400 702l84-76" fill="none" stroke="#f0c84c" stroke-width="11"/>
+  <text x="400" y="755" fill="#f5fafb" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="4" text-anchor="middle">RADA · SYNTHETIC DEMO</text>
+</svg>
