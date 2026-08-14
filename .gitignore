@@ -1,0 +1,18 @@
+.venv-bootstrap/
+.python/
+.venv/
+.venv-model/
+.venv-app/
+__pycache__/
+*.pyc
+
+vendor/sn-mvfoul/
+
+data/mvfoul/
+clips/
+*.zip
+*.pth
+*.pth.tar
+
+# Local scratch
+tmp.txt

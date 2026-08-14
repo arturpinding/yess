@@ -1,0 +1,320 @@
+[
+  {
+    "incident_id": "SN_DATASET_ACTION_0",
+    "official_decision": "yellow",
+    "official_action": "Standing tackling",
+    "model_prediction": "yellow",
+    "action_prediction": "tackling",
+    "probabilities": {
+      "no_offence": 0.209462,
+      "foul_no_card": 0.185025,
+      "yellow": 0.584799,
+      "red": 0.020714
+    },
+    "action_probabilities": {
+      "tackling": 0.761461,
+      "standing_tackling": 0.149333,
+      "high_leg": 0.001317,
+      "holding": 0.011956,
+      "pushing": 3.4e-05,
+      "elbowing": 0.0068,
+      "challenge": 0.039278,
+      "dive": 0.02982
+    },
+    "confidence": 0.584799,
+    "accepted": false,
+    "data_origin": "Official sample bundled with SoccerNet sn-mvfoul",
+    "views": [
+      "vendor/sn-mvfoul/VARS interface/dataset/action_0/clip_0.mp4",
+      "vendor/sn-mvfoul/VARS interface/dataset/action_0/clip_1.mp4"
+    ]
+  },
+  {
+    "incident_id": "SN_DATASET_ACTION_1",
+    "official_decision": "yellow",
+    "official_action": "Tackling",
+    "model_prediction": "yellow",
+    "action_prediction": "tackling",
+    "probabilities": {
+      "no_offence": 0.364566,
+      "foul_no_card": 0.161039,
+      "yellow": 0.461144,
+      "red": 0.013251
+    },
+    "action_probabilities": {
+      "tackling": 0.841846,
+      "standing_tackling": 0.106418,
+      "high_leg": 0.000395,
+      "holding": 0.025781,
+      "pushing": 0.000135,
+      "elbowing": 0.001986,
+      "challenge": 0.020281,
+      "dive": 0.003159
+    },
+    "confidence": 0.461144,
+    "accepted": false,
+    "data_origin": "Official sample bundled with SoccerNet sn-mvfoul",
+    "views": [
+      "vendor/sn-mvfoul/VARS interface/dataset/action_1/clip_0.mp4",
+      "vendor/sn-mvfoul/VARS interface/dataset/action_1/clip_1.mp4"
+    ]
+  },
+  {
+    "incident_id": "SN_DATASET_ACTION_2",
+    "official_decision": "yellow",
+    "official_action": "Holding",
+    "model_prediction": "yellow",
+    "action_prediction": "holding",
+    "probabilities": {
+      "no_offence": 0.293224,
+      "foul_no_card": 0.33658,
+      "yellow": 0.352719,
+      "red": 0.017477
+    },
+    "action_probabilities": {
+      "tackling": 0.016158,
+      "standing_tackling": 0.291887,
+      "high_leg": 0.000522,
+      "holding": 0.461596,
+      "pushing": 0.005012,
+      "elbowing": 0.018603,
+      "challenge": 0.205564,
+      "dive": 0.000659
+    },
+    "confidence": 0.352719,
+    "accepted": false,
+    "data_origin": "Official sample bundled with SoccerNet sn-mvfoul",
+    "views": [
+      "vendor/sn-mvfoul/VARS interface/dataset/action_2/clip_0.mp4",
+      "vendor/sn-mvfoul/VARS interface/dataset/action_2/clip_1.mp4"
+    ]
+  },
+  {
+    "incident_id": "SN_DATASET_ACTION_3",
+    "official_decision": "red",
+    "official_action": "High leg",
+    "model_prediction": "red",
+    "action_prediction": "high_leg",
+    "probabilities": {
+      "no_offence": 0.057265,
+      "foul_no_card": 0.027711,
+      "yellow": 0.153094,
+      "red": 0.76193
+    },
+    "action_probabilities": {
+      "tackling": 0.000411,
+      "standing_tackling": 0.00061,
+      "high_leg": 0.997081,
+      "holding": 0.000441,
+      "pushing": 3.1e-05,
+      "elbowing": 0.000102,
+      "challenge": 0.000835,
+      "dive": 0.000488
+    },
+    "confidence": 0.76193,
+    "accepted": false,
+    "data_origin": "Official sample bundled with SoccerNet sn-mvfoul",
+    "views": [
+      "vendor/sn-mvfoul/VARS interface/dataset/action_3/clip_0.mp4",
+      "vendor/sn-mvfoul/VARS interface/dataset/action_3/clip_1.mp4"
+    ]
+  },
+  {
+    "incident_id": "SN_DATASET_ACTION_4",
+    "official_decision": "yellow",
+    "official_action": "Tackling",
+    "model_prediction": "yellow",
+    "action_prediction": "tackling",
+    "probabilities": {
+      "no_offence": 0.368001,
+      "foul_no_card": 0.218382,
+      "yellow": 0.389496,
+      "red": 0.024121
+    },
+    "action_probabilities": {
+      "tackling": 0.852655,
+      "standing_tackling": 0.058107,
+      "high_leg": 0.000122,
+      "holding": 0.068086,
+      "pushing": 0.000823,
+      "elbowing": 0.001278,
+      "challenge": 0.014639,
+      "dive": 0.004289
+    },
+    "confidence": 0.389496,
+    "accepted": false,
+    "data_origin": "Official sample bundled with SoccerNet sn-mvfoul",
+    "views": [
+      "vendor/sn-mvfoul/VARS interface/dataset/action_4/clip_0.mp4",
+      "vendor/sn-mvfoul/VARS interface/dataset/action_4/clip_1.mp4"
+    ]
+  },
+  {
+    "incident_id": "I0001",
+    "official_decision": "no_offence",
+    "model_prediction": "no_offence",
+    "probabilities": {
+      "no_offence": 0.938,
+      "foul_no_card": 0.0207,
+      "yellow": 0.0207,
+      "red": 0.0207
+    },
+    "confidence": 0.938,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0002",
+    "official_decision": "no_offence",
+    "model_prediction": "no_offence",
+    "probabilities": {
+      "no_offence": 0.645,
+      "foul_no_card": 0.1183,
+      "yellow": 0.1183,
+      "red": 0.1183
+    },
+    "confidence": 0.645,
+    "accepted": false,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0003",
+    "official_decision": "no_offence",
+    "model_prediction": "no_offence",
+    "probabilities": {
+      "no_offence": 0.907,
+      "foul_no_card": 0.031,
+      "yellow": 0.031,
+      "red": 0.031
+    },
+    "confidence": 0.907,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0361",
+    "official_decision": "foul_no_card",
+    "model_prediction": "yellow",
+    "probabilities": {
+      "no_offence": 0.011,
+      "foul_no_card": 0.011,
+      "yellow": 0.967,
+      "red": 0.011
+    },
+    "confidence": 0.967,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0362",
+    "official_decision": "foul_no_card",
+    "model_prediction": "yellow",
+    "probabilities": {
+      "no_offence": 0.0073,
+      "foul_no_card": 0.0073,
+      "yellow": 0.978,
+      "red": 0.0073
+    },
+    "confidence": 0.978,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0363",
+    "official_decision": "foul_no_card",
+    "model_prediction": "yellow",
+    "probabilities": {
+      "no_offence": 0.0153,
+      "foul_no_card": 0.0153,
+      "yellow": 0.954,
+      "red": 0.0153
+    },
+    "confidence": 0.954,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0364",
+    "official_decision": "foul_no_card",
+    "model_prediction": "yellow",
+    "probabilities": {
+      "no_offence": 0.022,
+      "foul_no_card": 0.022,
+      "yellow": 0.934,
+      "red": 0.022
+    },
+    "confidence": 0.934,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0365",
+    "official_decision": "foul_no_card",
+    "model_prediction": "yellow",
+    "probabilities": {
+      "no_offence": 0.0113,
+      "foul_no_card": 0.0113,
+      "yellow": 0.966,
+      "red": 0.0113
+    },
+    "confidence": 0.966,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0366",
+    "official_decision": "foul_no_card",
+    "model_prediction": "yellow",
+    "probabilities": {
+      "no_offence": 0.021,
+      "foul_no_card": 0.021,
+      "yellow": 0.937,
+      "red": 0.021
+    },
+    "confidence": 0.937,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0958",
+    "official_decision": "foul_no_card",
+    "model_prediction": "foul_no_card",
+    "probabilities": {
+      "no_offence": 0.0133,
+      "foul_no_card": 0.96,
+      "yellow": 0.0133,
+      "red": 0.0133
+    },
+    "confidence": 0.96,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0959",
+    "official_decision": "yellow",
+    "model_prediction": "yellow",
+    "probabilities": {
+      "no_offence": 0.0203,
+      "foul_no_card": 0.0203,
+      "yellow": 0.939,
+      "red": 0.0203
+    },
+    "confidence": 0.939,
+    "accepted": true,
+    "data_origin": "synthetic"
+  },
+  {
+    "incident_id": "I0960",
+    "official_decision": "yellow",
+    "model_prediction": "yellow",
+    "probabilities": {
+      "no_offence": 0.0493,
+      "foul_no_card": 0.0493,
+      "yellow": 0.852,
+      "red": 0.0493
+    },
+    "confidence": 0.852,
+    "accepted": true,
+    "data_origin": "synthetic"
+  }
+]

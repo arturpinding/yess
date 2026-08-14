@@ -1,0 +1,30 @@
+{
+  "incident_id": "SN_DATASET_ACTION_0",
+  "official_decision": "yellow",
+  "official_action": "Standing tackling",
+  "model_prediction": "yellow",
+  "action_prediction": "tackling",
+  "probabilities": {
+    "no_offence": 0.209462,
+    "foul_no_card": 0.185025,
+    "yellow": 0.584799,
+    "red": 0.020714
+  },
+  "action_probabilities": {
+    "tackling": 0.761461,
+    "standing_tackling": 0.149333,
+    "high_leg": 0.001317,
+    "holding": 0.011956,
+    "pushing": 3.4e-05,
+    "elbowing": 0.0068,
+    "challenge": 0.039278,
+    "dive": 0.02982
+  },
+  "confidence": 0.584799,
+  "accepted": false,
+  "data_origin": "Official sample bundled with SoccerNet sn-mvfoul",
+  "views": [
+    "vendor/sn-mvfoul/VARS interface/dataset/action_0/clip_0.mp4",
+    "vendor/sn-mvfoul/VARS interface/dataset/action_0/clip_1.mp4"
+  ]
+}
