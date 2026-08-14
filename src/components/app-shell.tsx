@@ -151,6 +151,16 @@ export function AppShell({
           </Link>
 
           <div className="top-actions">
+            {process.env.NODE_ENV !== "production" && (
+              <Link
+                className="icon-button mobile-admin-link"
+                href={`/${locale}/admin`}
+                aria-label={d.controlRoom}
+                title={d.controlRoom}
+              >
+                <ShieldCheck size={18} aria-hidden="true" />
+              </Link>
+            )}
             <button
               className="icon-button spoiler-toggle"
               type="button"

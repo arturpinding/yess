@@ -304,6 +304,121 @@ Cache-Control: private, no-store, max-age=0
 
 This is an authenticated snapshot download, not a long-lived secret subscription URL. Rate limit: 30/minute/profile session.
 
+### Development-only operator routes
+
+The following routes back the local <code>/{locale}/admin</code> control room. They perform real PostgreSQL mutations, but only when <code>NODE_ENV</code> is not <code>production</code>. They intentionally have no staff login or role check yet; every route returns <code>404 not_found</code> before CSRF parsing or database access in production. Run them only on a trusted local development host.
+
+All unsafe calls require the same exact-Origin and double-submit CSRF check described above. The browser control room creates the CSRF cookie/header pair; a development session is not required. Responses are private and non-cacheable, include a request ID, and expose rate-limit headers. The process-local limits are 60 stream mutations/minute/CSRF-token hash and 30 event mutations/minute/CSRF-token hash.
+
+These development routes are deliberately absent from the lightweight runtime OpenAPI document because they are not a production or partner surface. Their complete current contract is documented here.
+
+#### POST /api/v1/admin/streams
+
+Creates a demo playback-source record for an existing event. It does not provision a provider, encoder, packager, origin or CDN, and it does not create a rights window.
+
+    {
+      "eventId": "70000000-0000-4000-8000-000000000001",
+      "reason": "Add the tested backup manifest",
+      "protocol": "hls",
+      "state": "ready",
+      "priority": 20,
+      "playbackLocator": "https://media.example.test/live/master.m3u8",
+      "externalWatchUrl": null,
+      "provider": "demo-origin",
+      "providerStreamRef": "event-001-backup",
+      "requiresSignedAccess": true,
+      "dvrWindowSeconds": 1800,
+      "captionsAvailable": true
+    }
+
+- Protocol is <code>webrtc</code>, <code>ll_hls</code>, <code>hls</code> or <code>external</code>.
+- State is <code>provisioning</code>, <code>ready</code>, <code>live</code>, <code>degraded</code>, <code>ended</code> or <code>unavailable</code>; default <code>provisioning</code>.
+- Priority is an integer from 0 through 32767; default 100. Authorization ordering considers state, then protocol, then ascending numeric priority, unless a rights window names a specific stream.
+- Internal protocols require <code>playbackLocator</code> and prohibit <code>externalWatchUrl</code>. External protocol requires <code>externalWatchUrl</code> and prohibits <code>playbackLocator</code>.
+- Locators must be absolute HTTP(S), no longer than 2048 characters, and cannot contain URL credentials. The local allowance is not a production host allow-list.
+- Provider is 1–100 characters and <code>providerStreamRef</code> is 1–200; control characters are rejected. The provider/reference pair is unique and serialized with a PostgreSQL advisory lock.
+- <code>requiresSignedAccess</code> defaults to true, <code>dvrWindowSeconds</code> is 0–2592000 and defaults to zero, and <code>captionsAvailable</code> defaults to false.
+- Reason is required, trimmed, and 3–500 characters. Unknown fields are rejected.
+
+Created response: <code>201 { "data": AdminStream, "requestId": "..." }</code>. The created row always has <code>isDemo: true</code>. <code>AdminStream</code> includes the bilingual event title, source fields, <code>lastHealthyAt</code> and the optimistic-concurrency value <code>updatedAt</code>.
+
+#### PATCH /api/v1/admin/streams/{streamId}
+
+Updates one or more source fields. Supply the exact <code>updatedAt</code> returned by the latest read:
+
+    {
+      "reason": "Primary signal passed the readiness check",
+      "expectedUpdatedAt": "2026-08-14T12:00:00.000Z",
+      "state": "live",
+      "priority": 10
+    }
+
+At least one editable source field is required. The patch is merged with the stored row and the complete internal/external locator invariant is revalidated. A successful response is <code>200 { "data": AdminStream, "requestId": "..." }</code> with a new <code>updatedAt</code>. A stale timestamp returns <code>409 version_conflict</code> rather than silently overwriting another operator.
+
+#### DELETE /api/v1/admin/streams/{streamId}
+
+    {
+      "reason": "Retire the obsolete demo fallback",
+      "expectedUpdatedAt": "2026-08-14T12:00:00.000Z"
+    }
+
+Deletion is intentionally guarded. The row must be a demo stream, its current state must be <code>ended</code> or <code>unavailable</code>, its timestamp must still match, and it must have no unexpired authorized playback or recently heartbeating playback. The UI additionally requires the operator to type the exact provider stream reference. The database deletes dependent stream-specific rights windows, renditions and playback sessions through foreign-key cascades.
+
+Success is:
+
+    {
+      "data": {
+        "id": "91000000-0000-4000-8000-000000000001",
+        "deleted": true,
+        "cascaded": {
+          "rightsWindows": 0,
+          "renditions": 3,
+          "playbackSessions": 0
+        }
+      },
+      "requestId": "..."
+    }
+
+Every stream create/update/delete writes its audit row in the same transaction. The row contains the required reason, request ID, null development actor, action, target, before/after snapshot, HMAC-pseudonymized client IP when supplied and a bounded user-agent summary. Query values and fragments in stored locators are removed from audit snapshots.
+
+Common stream errors:
+
+| Status | Code                                      | Meaning                                                |
+| -----: | ----------------------------------------- | ------------------------------------------------------ |
+|    400 | <code>invalid_request</code>              | strict request validation failed                       |
+|    400 | <code>invalid_stream_configuration</code> | merged protocol/locator fields violate the invariant   |
+|    403 | <code>csrf_failed</code>                  | exact-Origin/double-submit validation failed           |
+|    403 | <code>demo_stream_required</code>         | deletion targeted a non-demo stream                    |
+|    404 | <code>event_not_found</code>              | create targeted a missing event                        |
+|    404 | <code>stream_not_found</code>             | update/delete targeted a missing stream                |
+|    404 | <code>not_found</code>                    | route is intentionally unavailable in production       |
+|    409 | <code>version_conflict</code>             | <code>expectedUpdatedAt</code> is stale                |
+|    409 | <code>provider_reference_conflict</code>  | provider/reference pair is already assigned            |
+|    409 | <code>stream_must_be_inactive</code>      | delete targeted a source not ended/unavailable         |
+|    409 | <code>active_playback_exists</code>       | delete targeted a source with a current playback lease |
+|    429 | <code>rate_limited</code>                 | local stream-mutation limit exceeded                   |
+
+#### PATCH /api/v1/admin/events/{eventId}
+
+Updates one event and its audit entry atomically:
+
+    {
+      "reason": "Venue confirmed a fifteen-minute delay",
+      "version": 3,
+      "state": "delayed",
+      "scheduledStartAt": "2026-08-14T15:15:00.000Z",
+      "statusDetailEt": "Algus lükkub 15 minutit edasi",
+      "statusDetailEn": "Start delayed by 15 minutes"
+    }
+
+The editable fields are <code>titleEt</code>, <code>titleEn</code>, <code>state</code>, <code>scheduledStartAt</code>, <code>actualStartAt</code>, <code>endAt</code>, <code>venueId</code>, <code>statusDetailEt</code> and <code>statusDetailEn</code>. At least one must be present. Titles are 1–240 trimmed characters; status details are null or 1–240 trimmed characters; venue is a UUID or null. Times are UTC ISO 8601 strings ending in <code>Z</code>; actual start and end may be null. The control-room form presents Tallinn wall-clock inputs and performs deterministic DST-aware conversion before calling this API.
+
+State is <code>scheduled</code>, <code>delayed</code>, <code>live</code>, <code>paused</code>, <code>finished</code> or <code>cancelled</code>. Normal transitions use the shared event state machine. Entering live fills a missing actual start with server time; entering finished fills a missing end time. End must be later than actual start, or scheduled start when no actual start exists. <code>overrideInvalidTransition: true</code> permits a deliberate correction and changes the audit action to <code>event.manual_transition_override</code>; the UI shows an explicit confirmation.
+
+Version is the latest positive integer from the control-room read. A successful transaction increments it and returns <code>200 { "data": AdminEvent, "requestId": "..." }</code>. A stale version returns <code>409 version_conflict</code> with <code>currentVersion</code>; the client refreshes instead of overwriting. A missing event or venue returns <code>404 event_not_found</code> or <code>404 venue_not_found</code>. Invalid state transitions and time ordering return <code>409 invalid_transition</code> and <code>409 invalid_schedule</code>. CSRF, production guard and rate-limit responses use <code>403 csrf_failed</code>, <code>404 not_found</code> and <code>429 rate_limited</code>.
+
+The event audit row contains the reason, request ID, null development actor, action, target, full before/after event snapshots and bounded user-agent summary. It is written in the same transaction as the versioned update. This local database history is functional audit evidence, but it is not yet tamper-evident production audit storage or attributable to a staff identity.
+
 ## Runnable development example
 
 Start PostgreSQL, migrate/seed and run the application first. This example creates a temporary cookie jar outside the repository and follows the fictional demo athlete Mari Mets:
@@ -338,19 +453,19 @@ The cookie jar contains a development session credential. Delete it when finishe
 
 These are HTML routes, not JSON API contracts:
 
-| Route                       | Purpose                                                                             |
-| --------------------------- | ----------------------------------------------------------------------------------- |
-| `/`                         | redirect to Estonian locale                                                         |
-| `/{locale}`                 | live, soon, Estonians today, followed feed, replay/highlights and schedule preview  |
-| `/{locale}/schedule`        | complete Tallinn-time schedule                                                      |
-| `/{locale}/discover`        | cross-entity discovery/search                                                       |
-| `/{locale}/athletes/{slug}` | athlete biography, facts, club, competitions/events/results/media and follow state  |
-| `/{locale}/teams/{slug}`    | team/club profile, athletes/events and follow state                                 |
-| `/{locale}/events/{slug}`   | status, Tallinn time/countdown, player gate, rights, participants, timeline/related |
-| `/{locale}/my-sports`       | followed entities, personalized schedule and calendar export                        |
-| `/{locale}/notifications`   | in-app inbox, read state and demo notification controls                             |
-| `/{locale}/settings`        | local theme/spoiler/data-saver plus global in-app notification/account foundations  |
-| `/{locale}/admin`           | development-only read-only control-room demo; production proxy returns hard 404     |
+| Route                       | Purpose                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| `/`                         | redirect to Estonian locale                                                          |
+| `/{locale}`                 | live, soon, Estonians today, followed feed, replay/highlights and schedule preview   |
+| `/{locale}/schedule`        | complete Tallinn-time schedule                                                       |
+| `/{locale}/discover`        | cross-entity discovery/search                                                        |
+| `/{locale}/athletes/{slug}` | athlete biography, facts, club, competitions/events/results/media and follow state   |
+| `/{locale}/teams/{slug}`    | team/club profile, athletes/events and follow state                                  |
+| `/{locale}/events/{slug}`   | status, Tallinn time/countdown, player gate, rights, participants, timeline/related  |
+| `/{locale}/my-sports`       | followed entities, personalized schedule and calendar export                         |
+| `/{locale}/notifications`   | in-app inbox, read state and demo notification controls                              |
+| `/{locale}/settings`        | local theme/spoiler/data-saver plus global in-app notification/account foundations   |
+| `/{locale}/admin`           | development-only event/source control room with real local mutations; production 404 |
 
 `locale` is `et` or `en`; unknown locale/entity slugs return the localized not-found state. Additional page routes should be added here only after they exist.
 
@@ -365,7 +480,7 @@ Production integration will require versioned, validated interfaces for at least
 - product/offer listing, checkout intent and signed/idempotent payment webhooks;
 - data export/deletion request/status/download;
 - authenticated schedule/results ingestion with provider event idempotency;
-- editor/operator catalogue, correction, rights, stream-control and audit endpoints; and
+- production-authenticated editor/operator catalogue, correction, rights, stream-provider control and audit endpoints; and
 - internal outbox/notification delivery and provider callback endpoints.
 
 Before exposing a partner/public API, generate a complete OpenAPI document from the same runtime schemas, add cursor pagination, explicit compatibility/deprecation policy, per-client OAuth scopes, webhook signing/replay defense and contract tests. Do not expose internal Drizzle rows directly: public DTOs must keep rights contract references, raw source payloads, session/token hashes, provider IDs and audit/security data private.

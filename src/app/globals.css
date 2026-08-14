@@ -422,6 +422,10 @@ kbd {
   gap: 7px;
 }
 
+.mobile-admin-link {
+  display: none;
+}
+
 .icon-button {
   display: inline-flex;
   min-width: 39px;
@@ -2036,6 +2040,10 @@ kbd {
 
   .side-rail {
     display: none;
+  }
+
+  .mobile-admin-link {
+    display: inline-flex;
   }
 
   .app-body {

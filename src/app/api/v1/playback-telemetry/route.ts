@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, type SQL } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { getViewerContext } from "@/server/auth/viewer-context";
 import { db } from "@/server/db/client";
 import { playbackSessions } from "@/server/db/schema";
 import { privateJson, rateLimitHeaders } from "@/server/http/api-response";
 import { createLogger } from "@/server/observability/logger";
+import { preserveFirstPlaybackStartedAt } from "@/server/playback/session-state";
 import { playbackTelemetrySchema } from "@/server/playback/telemetry";
 import { checkRequestCsrf, consumeApiRateLimit } from "@/server/security/request-guards";
 
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
           .set({
             ...commonUpdate,
             state: "playing",
-            startedAt: sql`coalesce(${playbackSessions.startedAt}, ${now})`,
+            startedAt: preserveFirstPlaybackStartedAt(now),
             fatalErrorCode: null,
           })
           .where(updateConditions);

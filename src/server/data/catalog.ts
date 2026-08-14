@@ -1253,34 +1253,60 @@ export async function getNotificationInbox(profileId: string, spoilerFree: boole
 }
 
 export async function getAdminOverview() {
-  const [eventRows, streamRows, auditRows, collectionRows, userRows, playbackRows] =
+  const [eventRows, streamRows, venueRows, auditRows, collectionRows, userRows, playbackRows] =
     await Promise.all([
       db
         .select({
           id: events.id,
-          title: events.titleEt,
+          titleEt: events.titleEt,
+          titleEn: events.titleEn,
           state: events.state,
-          startAt: events.scheduledStartAt,
+          scheduledStartAt: events.scheduledStartAt,
+          actualStartAt: events.actualStartAt,
+          endAt: events.endAt,
+          venueId: events.venueId,
+          venueName: venues.name,
+          statusDetailEt: events.statusDetailEt,
+          statusDetailEn: events.statusDetailEn,
+          version: events.version,
+          updatedAt: events.updatedAt,
         })
         .from(events)
-        .where(
-          and(
-            gte(events.scheduledStartAt, new Date(Date.now() - 12 * 3_600_000)),
-            lte(events.scheduledStartAt, new Date(Date.now() + 36 * 3_600_000)),
-          ),
-        )
-        .orderBy(asc(events.scheduledStartAt)),
+        .leftJoin(venues, eq(venues.id, events.venueId))
+        .orderBy(asc(events.scheduledStartAt))
+        .limit(200),
       db
         .select({
           id: streams.id,
           eventId: streams.eventId,
+          eventTitleEt: events.titleEt,
+          eventTitleEn: events.titleEn,
           protocol: streams.protocol,
           state: streams.state,
+          priority: streams.priority,
+          playbackLocator: streams.playbackLocator,
+          externalWatchUrl: streams.externalWatchUrl,
           provider: streams.provider,
+          providerStreamRef: streams.providerStreamRef,
+          requiresSignedAccess: streams.requiresSignedAccess,
+          dvrWindowSeconds: streams.dvrWindowSeconds,
+          captionsAvailable: streams.captionsAvailable,
+          isDemo: streams.isDemo,
           lastHealthyAt: streams.lastHealthyAt,
+          updatedAt: streams.updatedAt,
         })
         .from(streams)
+        .innerJoin(events, eq(events.id, streams.eventId))
         .orderBy(asc(streams.priority)),
+      db
+        .select({
+          id: venues.id,
+          name: venues.name,
+          city: venues.city,
+          countryCode: venues.countryCode,
+        })
+        .from(venues)
+        .orderBy(asc(venues.name)),
       db
         .select({
           id: auditLogs.id,
@@ -1302,11 +1328,20 @@ export async function getAdminOverview() {
         .where(or(eq(playbackSessions.state, "authorized"), eq(playbackSessions.state, "playing"))),
     ]);
   return {
-    events: eventRows.map((row) => ({ ...row, startAt: row.startAt.toISOString() })),
-    streams: streamRows.map((row) => ({
+    events: eventRows.map((row) => ({
       ...row,
-      lastHealthyAt: row.lastHealthyAt?.toISOString(),
+      scheduledStartAt: row.scheduledStartAt.toISOString(),
+      actualStartAt: row.actualStartAt?.toISOString() ?? null,
+      endAt: row.endAt?.toISOString() ?? null,
+      updatedAt: row.updatedAt.toISOString(),
     })),
+    streams: streamRows.map(({ eventTitleEt, eventTitleEn, ...row }) => ({
+      ...row,
+      eventTitle: { et: eventTitleEt, en: eventTitleEn },
+      lastHealthyAt: row.lastHealthyAt?.toISOString() ?? null,
+      updatedAt: row.updatedAt.toISOString(),
+    })),
+    venues: venueRows,
     audits: auditRows.map((row) => ({ ...row, occurredAt: row.occurredAt.toISOString() })),
     metrics: {
       activeStreams: streamRows.filter((row) => row.state === "live").length,

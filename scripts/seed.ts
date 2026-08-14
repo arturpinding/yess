@@ -909,7 +909,7 @@ async function seed(): Promise<void> {
         });
     }
 
-    const publicTestHls = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+    const publicTestHls = "https://test-streams.mux.dev/tos_ismc/main.m3u8";
     const streamRows: Array<typeof tables.streams.$inferInsert> = [
       {
         id: ids.stream.live,

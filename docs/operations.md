@@ -2,7 +2,35 @@
 
 Last reviewed: 2026-08-14
 
-The repository's admin/control views and sample records are development demonstrations. They do not control a real encoder, CDN, rights contract, billing provider, notification provider or production schedule feed. The production proxy deliberately returns 404 for the admin route; do not remove that guard before staff SSO/MFA, server-side RBAC and audited operations are ready.
+The repository's control room is a development-only operator tool: it really updates the local PostgreSQL event and playback-source records, and those records affect later catalogue reads and playback authorization. It does not control an encoder, packager, origin, CDN, rights contract, billing provider, notification provider or production schedule feed. The production page and admin APIs deliberately return 404; do not remove those guards before staff SSO/MFA, server-side RBAC, attributable audit and provider integrations are ready.
+
+## Implemented local control room
+
+Start the application normally, then open <http://localhost:3000/et/admin> or <http://localhost:3000/en/admin>. No staff login is required in development, by current product decision. That makes this a trusted-local tool only: bind the development server to loopback and do not tunnel or expose it to an untrusted network.
+
+### Change what RADA offers for playback
+
+1. Under **Playback sources**, expand a source to change its protocol, state, priority, playback/external URL, provider, provider stream reference, signed-access flag, DVR seconds or caption flag. Enter a specific operational reason and save.
+2. Use **Add fallback source** to attach a new WebRTC, LL-HLS, HLS or official-external record to an event. Provider plus provider reference must be unique. An internal protocol requires a playback URL; an external record requires the official destination instead.
+3. Source ordering for a general right is state first (live, ready, degraded, ended, provisioning, unavailable), then protocol (WebRTC, LL-HLS, HLS, external), then smaller numeric priority. A stream-specific rights window still pins its named source.
+4. Adding or editing a source does not grant viewing rights. Playback authorization continues to apply event/competition/stream rights, territory, time, entitlement, maturity and concurrency before disclosing a locator.
+5. The change is catalogue metadata. It does not start or stop upstream contribution, create a WHEP endpoint, publish an HLS manifest, switch a CDN route, rotate a provider credential or verify that the entered URL is healthy.
+
+The stream state is therefore RADA's current operational belief, not a command sent to media infrastructure. Marking a record live makes it the preferred candidate under applicable rights; it cannot make a dead upstream signal play.
+
+### Correct event metadata
+
+Expand an event under **Event control** to edit its public state, venue, Estonian/English title and status detail, scheduled start, actual start or end. Times are entered as `Europe/Tallinn` wall-clock values and stored as UTC. Nonexistent spring-DST times are rejected; the repeated autumn hour resolves consistently to its later occurrence.
+
+Normal status transitions are enforced. Entering live fills a missing actual start; entering finished fills a missing end. An invalid transition can be used only with the explicit exceptional-correction checkbox and confirmation, and receives a distinct audit action. Finishing, cancelling and override actions require a destructive confirmation.
+
+### Concurrency, deletion and audit
+
+- Every event write carries the version loaded with the form; every stream update/delete carries its last `updatedAt`. A stale tab receives a conflict and must refresh.
+- Every write requires a 3–500 character reason. Catalogue mutation and before/after audit row commit atomically. The local actor is null because staff identity is absent; source URL query values are redacted in audit snapshots.
+- A stream can be deleted only when it is a demo record in `ended` or `unavailable` state and has no unexpired authorization or recently heartbeating playback. The dialog requires the exact provider reference.
+- Stream deletion cascades its stream-specific rights windows, renditions and playback sessions. Treat it as destructive even though the audit snapshot and cascade counts remain; recreate the source manually if needed.
+- Admin mutations require exact-Origin/double-submit CSRF and use process-local token-hash rate limits. Those are useful development safeguards, not a replacement for authentication, authorization or shared production controls.
 
 ## Ownership
 
@@ -128,6 +156,8 @@ Quiet hours are interpreted in the profile timezone for ordinary messages. Time-
 Targets pending production measurement: p95 <60 seconds from accepted change/start to in-app availability and <120 seconds to provider acceptance for push/email. Report upstream feed delay separately.
 
 ## Control-room dashboard
+
+The implemented local view currently shows aggregate live/degraded source counts, active playback rows, demo users and published collections; editable source/event records; venues; last source health timestamps; and the ten latest audit summaries. The production dashboard below is a target and is not supplied by this repository.
 
 For each event, show:
 

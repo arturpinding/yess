@@ -26,11 +26,13 @@ The codebase contains:
 - signed session-token primitives with algorithm, issuer, audience, expiry and unique-ID verification, plus secure production cookie settings;
 - server-rendered viewer resolution that revalidates the session hash/state and profile ownership in PostgreSQL; unauthenticated SSR uses a non-persisted empty personalization scope;
 - double-submit CSRF and exact-Origin validation helpers for cookie-authenticated unsafe requests;
+- development-only event/source mutation routes that hard-404 in production, use strict Zod input schemas, private/no-store responses, per-CSRF-token-hash process-local limits and optimistic concurrency;
 - short-lived signed playback claims bound to profile, event, stream, rights window, country, content type, protocol set and policy version; signed access is carried only inside the authorized locator, not as a separate raw-JWT response field;
 - deterministic, fail-closed rights and entitlement evaluators with exclusive expiry boundaries;
 - bounded in-memory rate-limit and idempotency adapters explicitly intended only for local/test use;
 - PostgreSQL uniqueness, foreign keys, checks, session/device/playback records, notification/outbox deduplication, ingestion provenance and audit-log tables;
 - structured JSON logging with common password, token, cookie, authorization and secret paths redacted;
+- transactional development audit rows for event/source changes with required reason, request ID and before/after snapshots; source locator query values are redacted and a supplied client IP is HMAC-pseudonymized;
 - security headers including CSP, frame denial, MIME sniffing protection, referrer and permissions policy;
 - parsed HTTP(S)-scheme validation before stored playback/external destinations are returned to the browser; and
 - React's default text escaping and a schema that stores editorial text rather than executable markup.
@@ -40,7 +42,7 @@ A helper existing in the repository does not secure an endpoint by itself. Every
 ## Required production controls and known gaps
 
 - Replace demo session bootstrap with a contracted identity flow: verified contact point, secure password hashing or OIDC, account recovery, credential-stuffing protection, MFA for privileged roles, and session/device revocation.
-- Keep the production proxy's hard 404 for the development admin page until staff SSO, MFA, route-level RBAC and audited server mutations are deployed and tested.
+- Keep the production hard 404 for both the development admin page and its event/source APIs until staff SSO, MFA, route-level/object-level RBAC, attributable tamper-evident audit and provider controls are deployed and tested.
 - Keep session state server-side. On every sensitive request, verify the session row is active, not expired/revoked, belongs to the account, and has the current rotation/version. Rotate after login, privilege change and recovery.
 - Keep the role vocabulary aligned across database, token claims and route guards. Test viewer/editor/operator/admin allow and deny cases at the object level as privileged routes are added.
 - Replace process-local rate limits, idempotency and concurrency counts with atomic shared storage. A multi-replica deployment must not admit one limit per pod.
@@ -54,6 +56,8 @@ A helper existing in the repository does not secure an endpoint by itself. Every
 ## Web and API protections
 
 ### Authentication and cookies
+
+The development control room is an explicit exception to the production authentication model: it has no login, staff session or role check. Its page and APIs exist only outside production; same-origin CSRF, validation, rate limiting and audit reduce accidental local misuse but do not authenticate an operator. Do not expose the development server to an untrusted network or treat a CSRF token as a credential.
 
 - Production cookie: `__Host-` prefix, `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain` attribute.
 - Use short privileged sessions and step-up authentication for roles, rights, refunds, stream controls and personal-data export/deletion.
@@ -95,8 +99,11 @@ Bearer-authenticated backend API calls are outside browser ambient-cookie CSRF, 
 - Viewer can mutate only its own account/profile resources. Editors cannot grant entitlements or roles. Operators cannot change billing. Administrators remain constrained by audited server-side policy.
 - Check authorization both on collection queries and individual objects to prevent IDOR. Return consistent not-found/forbidden behavior where existence is sensitive.
 - Rights and entitlement decisions use server/database facts only. Client country, subscription, age, stream ID, event status or DVR flags are hints at most.
+- Development admin routes are not a staff authorization implementation. Their top-level production 404 is the security boundary until each privileged route can resolve an authenticated staff actor and enforce the launch-role matrix server-side.
 
 ### Rate limits and abuse
+
+The development stream routes currently allow 60 mutations/minute per SHA-256 CSRF-token hash, and the event route allows 30. This bounded process-memory implementation resets per process and multiplies across replicas, so it is not an account/IP authorization or production abuse boundary.
 
 Use separate shared policies for login/recovery, search, follows/preferences, playback authorization/heartbeat, vouchers, exports and privileged writes. Keys should combine privacy-preserving client/network signals with account/profile where appropriate. Responses expose standards-compatible limit/retry information without revealing whether an account exists.
 
@@ -171,7 +178,7 @@ A child profile is not a separate legal account. The account holder controls mat
 
 - [ ] Route-level authentication, object authorization and CSRF tests cover every unsafe endpoint.
 - [ ] Viewer/editor/operator/admin allow/deny matrix passes and the role vocabulary is consistent.
-- [ ] Production admin remains hard-404ed until SSO/MFA, RBAC and privileged audit paths pass their allow/deny matrix.
+- [ ] Production admin page and APIs remain hard-404ed until SSO/MFA, RBAC and privileged audit paths pass their allow/deny matrix.
 - [ ] Session rotation/revocation and playback-token expiry/replay tests pass across replicas.
 - [ ] Rights expiry, overlap conflict, unknown territory, entitlement revoke and concurrency race fail closed.
 - [ ] CSP and external URL allow-list pass; no secrets/tokens appear in HTML, URLs, logs or telemetry.

@@ -1,5 +1,6 @@
-import { Activity, FileClock, Info, RadioTower, ShieldCheck, Users } from "lucide-react";
+import { FileClock, Info, ShieldCheck, Users } from "lucide-react";
 import { notFound } from "next/navigation";
+import { AdminControlRoom } from "@/components/admin/admin-control-room";
 import { isLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { formatTallinnDateTime } from "@/i18n/format";
@@ -33,7 +34,9 @@ export default async function AdminPage({ params }: { params: Promise<{ locale: 
 
       <div className="demo-banner" role="alert">
         <Info size={15} aria-hidden="true" />
-        {d.adminNotice}
+        {localeParam === "et"
+          ? "Siin tehtud muudatused mõjutavad kohalikku näidiskataloogi ja esituse valikut. Tootmise meediaõigusi ega taristut ei ole ühendatud."
+          : "Changes here affect the local demo catalogue and playback selection. Production media rights and infrastructure are not connected."}
       </div>
 
       <section className="metric-grid" aria-label={d.streamHealth}>
@@ -59,65 +62,20 @@ export default async function AdminPage({ params }: { params: Promise<{ locale: 
         </div>
       </section>
 
-      <div className="admin-grid">
-        <section className="panel">
-          <header className="panel-header">
-            <h2>{d.streamHealth}</h2>
-            <p>
-              {localeParam === "et"
-                ? "Prioriteedijärjekord ja viimane tervisesignaal."
-                : "Fallback priority and last health signal."}
-            </p>
-          </header>
-          <div className="ops-list">
-            {data.streams.map((stream) => (
-              <div className="ops-row" key={stream.id}>
-                <span className="notification-icon">
-                  <RadioTower size={17} aria-hidden="true" />
-                </span>
-                <div>
-                  <strong>
-                    {stream.protocol.toUpperCase()} · {stream.provider}
-                  </strong>
-                  <small>{stream.eventId}</small>
-                </div>
-                <span
-                  className={`status-pill ${stream.state === "live" ? "live" : stream.state === "degraded" ? "delayed" : "finished"}`}
-                >
-                  {stream.state}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <aside className="panel">
-          <header className="panel-header">
-            <h2>{d.events}</h2>
-            <p>−12 h / +36 h</p>
-          </header>
-          <div className="ops-list">
-            {data.events.map((event) => (
-              <div className="ops-row compact" key={event.id}>
-                <Activity size={16} aria-hidden="true" />
-                <div>
-                  <strong>{event.title}</strong>
-                  <small>{formatTallinnDateTime(event.startAt, localeParam)}</small>
-                </div>
-                <span className={`status-pill ${event.state}`}>{event.state}</span>
-              </div>
-            ))}
-          </div>
-        </aside>
-      </div>
+      <AdminControlRoom
+        locale={localeParam}
+        initialStreams={data.streams}
+        initialEvents={data.events}
+        venues={data.venues}
+      />
 
       <section className="panel">
         <header className="panel-header">
           <h2>{d.auditHistory}</h2>
           <p>
             {localeParam === "et"
-              ? "Muutmatu logi privileegitud tegevustele."
-              : "Immutable history for privileged actions."}
+              ? "Salvestatud ajalugu operatiivsetele muudatustele."
+              : "Recorded history of operational changes."}
           </p>
         </header>
         <div className="ops-list">
