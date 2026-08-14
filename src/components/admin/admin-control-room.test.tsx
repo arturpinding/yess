@@ -183,6 +183,77 @@ describe("AdminControlRoom", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it("prefills and creates a discoverable local synthetic encoder source", async () => {
+    const created: AdminStream = {
+      ...stream,
+      id: "44444444-4444-4444-8444-444444444444",
+      protocol: "hls",
+      state: "provisioning",
+      priority: 50,
+      provider: "local-ffmpeg",
+      providerStreamRef: "local-22222222-test",
+      playbackLocator: "http://127.0.0.1:8090/media/local-22222222-test/index.m3u8",
+      requiresSignedAccess: false,
+      dvrWindowSeconds: 0,
+      captionsAvailable: false,
+      updatedAt: "2026-08-14T17:03:00.000Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: created, requestId: "request-local-create" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <AdminControlRoom
+        locale="en"
+        initialStreams={[stream]}
+        initialEvents={[event]}
+        venues={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add local encoder" }));
+    const createButton = screen.getByRole("button", { name: "Create source" });
+    const form = createButton.closest("form");
+    if (!form) throw new Error("local encoder form missing");
+
+    const provider = within(form).getByLabelText("Provider", { exact: true });
+    const providerReference = within(form).getByLabelText("Provider stream reference");
+    const playbackLocator = within(form).getByLabelText("Playback URL");
+    expect(provider).toHaveValue("local-ffmpeg");
+    expect(within(form).getByLabelText("Protocol")).toHaveValue("hls");
+    expect(within(form).getByLabelText("State")).toHaveValue("provisioning");
+    expect(within(form).getByLabelText("Require signed access")).not.toBeChecked();
+    expect((providerReference as HTMLInputElement).value).toMatch(/^local-22222222-/);
+    const localReference = (providerReference as HTMLInputElement).value;
+    const localLocator = (playbackLocator as HTMLInputElement).value;
+    expect(playbackLocator).toHaveValue(`http://127.0.0.1:8090/media/${localReference}/index.m3u8`);
+
+    fireEvent.change(within(form).getByLabelText("Reason for change"), {
+      target: { value: "Create a local synthetic encoder" },
+    });
+    fireEvent.click(createButton);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/v1/admin/streams");
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      eventId: event.id,
+      protocol: "hls",
+      state: "provisioning",
+      priority: 50,
+      provider: "local-ffmpeg",
+      providerStreamRef: localReference,
+      playbackLocator: localLocator,
+      requiresSignedAccess: false,
+      dvrWindowSeconds: 0,
+      captionsAvailable: false,
+      reason: "Create a local synthetic encoder",
+    });
+  });
+
   it("requires the exact provider reference before deleting an inactive demo source", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

@@ -25,13 +25,20 @@ Next.js application (control plane)
   |-- rights + entitlement decision point
   |-- short-lived playback authorization
   |-- notification planning and inbox
-  |-- development-only event/source control room (page and APIs hard-404 in production)
+  |-- development-only event/source/rights control room (page and APIs hard-404 in production)
+  |-- durable media-provider desired state, operations, idempotency and audit
   |
 PostgreSQL
   |-- catalogue, schedules, follows, rights, entitlements
+  |-- media-provider resources and operation history
   |-- notification and transactional-outbox state
   |-- playback leases/telemetry summaries
   |-- ingestion provenance and audit log
+  |
+Loopback development media provider (not a production vendor)
+  |-- bearer-authenticated control API selected by the server registry
+  |-- FFmpeg synthetic video/audio -> standard HLS playlist + segments
+  `-- provision/start/publish/unpublish/stop/refresh
   |
 Production adapters (not supplied by this repository)
   |-- identity/email verification
@@ -47,22 +54,24 @@ The video data plane does not proxy media through Next.js. After the control pla
 
 ## Repository boundaries
 
-| Path                       | Responsibility                                                        | Dependency rule                                                             |
-| -------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `src/app`                  | App Router pages, route handlers, layouts, loading/error states       | May call server/domain modules; must not embed vendor credentials           |
-| `src/components`           | Product UI and client preference/session helpers                      | May consume view models; should not query PostgreSQL directly               |
-| `src/components/admin`     | Development event/source editors, Tallinn conversion and API client   | UI confirmations supplement, never replace, server-side mutation guards     |
-| `src/domain`               | Framework-independent status, spoiler, content and Tallinn-time rules | Must remain deterministic and side-effect free                              |
-| `src/player`               | Playback protocol selection, controls, recovery and client telemetry  | Receives authorized sources; must not decide contractual rights             |
-| `src/server/db`            | Drizzle schema and build-phase-safe lazy database client              | Persistence only; business decisions stay in service/policy modules         |
-| `src/server/auth`          | Session-token primitives and session policy                           | Routes must additionally check server-side session state/revocation         |
-| `src/server/admin`         | Development stream validation, concurrency, safe deletion and audit   | Hard-disabled in production; no encoder/CDN/provider side effects           |
-| `src/server/rights`        | Fail-closed rights-window resolution                                  | Pure decision point; geo and concurrency facts arrive from trusted adapters |
-| `src/server/entitlements`  | Product/grant scope evaluation                                        | Payment webhooks create grants; this layer does not trust browser claims    |
-| `src/server/notifications` | UTC scheduling, revisions and deduplication                           | In-app rows are durable; vendor delivery later uses an outbox/adapter       |
-| `src/server/security`      | CSRF, playback tokens and rate-limit interfaces                       | Production rate limits require an atomic shared adapter                     |
-| `src/server/observability` | Structured, redacted logging                                          | Never log raw session/playback tokens or provider payload secrets           |
-| `scripts` / `drizzle`      | Seed/migration lifecycle                                              | Migrations are forward-only release artifacts                               |
+| Path                         | Responsibility                                                        | Dependency rule                                                             |
+| ---------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `src/app`                    | App Router pages, route handlers, layouts, loading/error states       | May call server/domain modules; must not embed vendor credentials           |
+| `src/components`             | Product UI and client preference/session helpers                      | May consume view models; should not query PostgreSQL directly               |
+| `src/components/admin`       | Development event/source/rights editors and provider controls         | UI confirmations supplement, never replace, server-side mutation guards     |
+| `src/domain`                 | Framework-independent status, spoiler, content and Tallinn-time rules | Must remain deterministic and side-effect free                              |
+| `src/player`                 | Playback protocol selection, controls, recovery and client telemetry  | Receives authorized sources; must not decide contractual rights             |
+| `src/server/db`              | Drizzle schema and build-phase-safe lazy database client              | Persistence only; business decisions stay in service/policy modules         |
+| `src/server/auth`            | Session-token primitives and session policy                           | Routes must additionally check server-side session state/revocation         |
+| `src/server/admin`           | Development catalogue/rights/provider validation, concurrency, audit  | Hard-disabled in production; only registered server-side providers are used |
+| `src/server/rights`          | Fail-closed rights-window resolution                                  | Pure decision point; geo and concurrency facts arrive from trusted adapters |
+| `src/server/entitlements`    | Product/grant scope evaluation                                        | Payment webhooks create grants; this layer does not trust browser claims    |
+| `src/server/notifications`   | UTC scheduling, revisions and deduplication                           | In-app rows are durable; vendor delivery later uses an outbox/adapter       |
+| `src/server/security`        | CSRF, playback tokens and rate-limit interfaces                       | Production rate limits require an atomic shared adapter                     |
+| `src/server/observability`   | Structured, redacted logging                                          | Never log raw session/playback tokens or provider payload secrets           |
+| `src/server/media-providers` | Media-provider contract and configured HTTP adapter                   | Browser input cannot choose the provider endpoint or credentials            |
+| `src/media-provider`         | Loopback synthetic FFmpeg/HLS development service                     | Generated test media only; not a production encoder, origin or CDN          |
+| `scripts` / `drizzle`        | Seed/migration lifecycle                                              | Migrations are forward-only release artifacts                               |
 
 ## Data model
 
@@ -132,13 +141,15 @@ This flow exists to make the local control room useful without representing unfi
 
 1. The page and each admin route return a hard 404 when `NODE_ENV=production`. In development there is deliberately no operator login, session or role binding.
 2. Every mutation still requires exact Origin plus a double-submit CSRF token. A process-local limit keyed by a hash of that token bounds stream and event writes separately.
-3. Strict Zod schemas validate UUIDs, enums, bounded text and source invariants. The event UI converts `Europe/Tallinn` wall-clock inputs into UTC; the API accepts only UTC instants ending in `Z`.
-4. Stream updates/deletes compare `expectedUpdatedAt` under a per-stream PostgreSQL advisory transaction lock. Event updates compare an integer version in the update predicate. Stale clients receive a conflict.
-5. Source create/update/delete and event update write the catalogue change and audit record in one transaction. Audit records contain the required reason, request ID and before/after state; source URL query values are redacted. The actor is null because no staff identity exists.
+3. Strict Zod schemas validate UUIDs, enums, bounded text, source invariants and rights combinations. The event and rights UIs convert `Europe/Tallinn` wall-clock inputs into UTC; APIs accept explicit instants.
+4. Stream and rights updates/deletes compare `expectedUpdatedAt` under PostgreSQL advisory transaction locks. Event updates compare an integer version in the update predicate. Stale clients receive a conflict.
+5. Source, rights and event mutations write the data change and audit record in one transaction. Audit records contain the required reason, request ID and before/after state; source URL query values are redacted. The actor is null because no staff identity exists.
 6. Deletion is limited to demo sources already ended/unavailable and with no current playback lease. The schema cascades stream-specific rights, rendition and playback rows; the response and audit record preserve their counts.
-7. The changed metadata immediately affects later server reads and playback authorization. It does not start/stop an encoder, publish a manifest, alter rights/entitlements or call a media provider.
+7. Rights CRUD supports competition, event, stream and media-asset scope. Equal-rank overlapping policy is rejected; an access-only `unavailable` patch is an audited emergency stop that clears access grants. Deletion is limited to an inactive window on a demo target. These rows are executable technical authorization policy, not evidence of a legal contract.
+8. A stream using the registered `local-ffmpeg` provider and HLS protocol can be provisioned, started, published, unpublished, stopped and refreshed. The application persists desired and observed state, one durable operation per idempotency key, safe results/errors and audit before calling the provider; successful observations update the catalogue stream state. Provider failure does not falsely report the requested state as achieved.
+9. The provider URL and bearer credential come from server configuration, never the browser request. Development accepts only loopback HTTP; production configuration requires HTTPS. The supplied provider generates synthetic media and serves it directly, so media bytes still do not traverse Next.js.
 
-The production replacement keeps the validation, optimistic concurrency and transactional audit concepts, but adds staff SSO/MFA, object-level RBAC, attributable and tamper-evident audit, HTTPS provider allow-lists, shared limits and explicit encoder/CDN/provider adapters.
+The production replacement keeps validation, optimistic concurrency, durable provider idempotency and transactional audit, but adds staff SSO/MFA, object-level RBAC, attributable and tamper-evident audit, contracted encoder/origin/CDN adapters, approved egress, shared limits and reconciliation workers.
 
 ### Schedule correction and notification
 
@@ -184,6 +195,8 @@ Every viewer object read or mutation must be scoped server-side to the active us
 - Rights, entitlement, parental-policy, session and concurrency checks fail closed.
 - Development event edits use versioned compare-and-update; source edits use a timestamp plus transaction advisory lock. Stale control-room tabs cannot silently overwrite a newer edit.
 - Demo-source deletion fails closed unless the source is inactive and no current playback lease exists.
+- Rights deletion fails closed unless the window is inactive and its target is demo data; emergency unavailability is an update, not a destructive delete.
+- Provider operations have database-unique idempotency keys and one pending operation per stream. Desired and observed states remain separate so a request is not confused with provider evidence. An operation still pending after five minutes can be abandoned only by a new-key refresh, which audits recovery and observes state instead of replaying an outcome-unknown command.
 - Notification and outbox deduplication is enforced with database uniqueness, not process memory.
 - Current authorization rows expire and are counted under a per-profile database lock. Production still needs the documented heartbeat/end path and shared expiring lease store so crashed clients release capacity predictably across replicas.
 - Schedule pages may be stale for a short cache TTL; playback authorization may not be cached.

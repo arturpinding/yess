@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-08-14
 
-This document is the production design for RADA's media data plane. The repository does **not** contain encoders, contribution links, an origin, CDN contracts, DRM, a geo-IP service, or media rights. Local development uses a clearly labelled public test HLS asset and an inert external-destination placeholder; production may use only verified official destinations. A successful local player test does not demonstrate production glass-to-glass latency.
+This document is the production design for RADA's media data plane. The repository does **not** supply production encoders, contribution links, an origin, CDN contracts, DRM, a geo-IP service, or media rights. Local development can use a clearly labelled public test HLS asset, an inert external-destination placeholder, or the supplied loopback service that generates synthetic video/audio with FFmpeg and serves standard HLS. Production may use only contracted media infrastructure and verified official destinations. A successful local player or provider test does not demonstrate production glass-to-glass latency.
 
 ## End-to-end path
 
@@ -21,6 +21,14 @@ Venue cameras / host feed
 ```
 
 RADA's Next.js API is the control plane. It evaluates rights and entitlements and issues a short-lived playback authorization. It must never carry live media segments through an application server.
+
+## Implemented local development path
+
+Run `npm run media:provider` in a second terminal. For an admin-created HLS source registered as `local-ffmpeg`, the control plane calls a loopback bearer-authenticated API to provision, start, publish, unpublish, stop or refresh one generated stream. FFmpeg produces an 854x480 test pattern, sine audio, two-second MPEG-TS HLS segments and a bounded live playlist under `.local-media/`; the provider serves that playlist and its segments directly.
+
+The application stores desired and observed provider-resource states separately. It persists a database-unique idempotency key, request hash, pending/succeeded/failed operation, safe result or error, provider request ID and audit evidence. The provider endpoint and credential are selected from server configuration rather than browser input. Development accepts only loopback HTTP; production configuration requires HTTPS, but the supplied registry still contains only the local adapter and is not a production-vendor integration.
+
+Publishing makes the synthetic playlist reachable; unpublishing withdraws it immediately; stop is rejected until a published resource is unpublished. A successful healthy publish updates the stream to live, while absent/failed states become unavailable. Applicable technical rights and entitlement checks still gate playback authorization. The local rights editor changes those executable policy rows, but it neither grants legal distribution rights nor purges a third-party CDN.
 
 ## 1. Contribution and ingest
 
@@ -212,7 +220,7 @@ Before a production event:
 1. Declare severity, incident commander, media lead and communications lead; timestamp actions in the incident channel.
 2. Confirm viewer impact from independent probes and player telemetry; distinguish source, control-plane, CDN and device failure.
 3. Preserve event context in the UI. Move viewers to a verified backup protocol/CDN or the rights holder's official destination.
-4. If unauthorized access is possible, revoke policy/token keys or withdraw manifests according to the pre-approved emergency procedure; contact the rights holder.
+4. If unauthorized access is possible, use the audited technical-rights emergency unavailable control to stop new local authorization and unpublish the local manifest where applicable. Production must additionally revoke policy/token keys or withdraw contracted provider/CDN delivery according to the pre-approved procedure and contact the rights holder.
 5. Keep updates factual: affected event/territory/device, workaround and next-update time. Do not expose security details or guess a recovery time.
 6. After recovery, verify every rendition/audio/caption path, close temporary access, preserve evidence, and run a blameless review within two business days.
 

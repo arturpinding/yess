@@ -21,12 +21,12 @@ import { privateJson, rateLimitHeaders } from "@/server/http/api-response";
 import { createLogger } from "@/server/observability/logger";
 import {
   appendPlaybackToken,
-  mapDatabaseRightsWindow,
+  isPlayableAuthorizationStreamState,
   normalizeHttpUrl,
+  resolvePlaybackRights,
   toPlayerSource,
   type AuthorizationStream,
 } from "@/server/playback/authorization";
-import { resolveRights } from "@/server/rights/resolve-rights";
 import { createPlaybackToken } from "@/server/security/playback-token";
 import { checkRequestCsrf, consumeApiRateLimit } from "@/server/security/request-guards";
 
@@ -195,10 +195,9 @@ export async function POST(
           ),
         );
 
-      const resolution = resolveRights(
-        rightsRows.map((row) =>
-          mapDatabaseRightsWindow(row, event.id, event.competitionId, streamRows, event.version),
-        ),
+      const resolution = resolvePlaybackRights(
+        rightsRows,
+        streamRows,
         {
           eventId: event.id,
           competitionId: event.competitionId,
@@ -210,6 +209,7 @@ export async function POST(
           entitlements: grants,
           activePlaybackCount: Number(activeRow?.value ?? 0),
         },
+        event.version,
       );
 
       if (!resolution.allowed) {
@@ -249,13 +249,11 @@ export async function POST(
       }
 
       const internalStreamId = resolution.delivery.streamId;
-      const stream = streamRows.find((candidate) => candidate.id === internalStreamId);
-      if (
-        !stream ||
-        !stream.playbackLocator ||
-        stream.state === "unavailable" ||
-        stream.state === "provisioning"
-      ) {
+      const stream =
+        resolution.stream?.id === internalStreamId
+          ? resolution.stream
+          : streamRows.find((candidate) => candidate.id === internalStreamId);
+      if (!stream || !stream.playbackLocator || !isPlayableAuthorizationStreamState(stream.state)) {
         return privateJson(
           { allowed: false, reason: "stream_unavailable" },
           { status: 503, headers: { ...responseHeaders, "Retry-After": "10" } },

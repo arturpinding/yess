@@ -20,6 +20,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:setup": "npm run db:migrate && npm run db:seed",
+    "media:provider": "tsx src/media-provider/local-server.ts",
     "worker:notifications": "tsx src/workers/notifications.ts",
     "test": "vitest run",
     "test:watch": "vitest",

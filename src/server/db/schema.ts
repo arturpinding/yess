@@ -85,6 +85,27 @@ export const streamState = pgEnum("stream_state", [
   "ended",
   "unavailable",
 ]);
+export const mediaProviderResourceState = pgEnum("media_provider_resource_state", [
+  "absent",
+  "provisioned",
+  "encoding",
+  "published",
+  "stopped",
+  "failed",
+]);
+export const mediaProviderOperationAction = pgEnum("media_provider_operation_action", [
+  "provision",
+  "start",
+  "publish",
+  "unpublish",
+  "stop",
+  "refresh",
+]);
+export const mediaProviderOperationState = pgEnum("media_provider_operation_state", [
+  "pending",
+  "succeeded",
+  "failed",
+]);
 export const contentKind = pgEnum("content_kind", ["live", "replay", "highlight"]);
 export const rightsAccess = pgEnum("rights_access", [
   "free",
@@ -652,6 +673,69 @@ export const streamRenditions = pgTable(
   ],
 );
 
+export const mediaProviderResources = pgTable(
+  "media_provider_resources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    streamId: uuid("stream_id")
+      .notNull()
+      .unique()
+      .references(() => streams.id, { onDelete: "cascade" }),
+    providerKey: varchar("provider_key", { length: 100 }).notNull(),
+    providerResourceId: varchar("provider_resource_id", { length: 200 }).notNull(),
+    desiredState: mediaProviderResourceState("desired_state").default("absent").notNull(),
+    observedState: mediaProviderResourceState("observed_state").default("absent").notNull(),
+    playbackLocator: text("playback_locator"),
+    generation: integer("generation").default(1).notNull(),
+    lastHealthyAt: timestamp("last_healthy_at", { withTimezone: true, mode: "date" }),
+    lastErrorCode: varchar("last_error_code", { length: 120 }),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("media_provider_resources_provider_ref_unique").on(
+      table.providerKey,
+      table.providerResourceId,
+    ),
+    index("media_provider_resources_observed_state_idx").on(table.observedState, table.updatedAt),
+    check("media_provider_resources_generation_check", sql`${table.generation} > 0`),
+  ],
+);
+
+export const mediaProviderOperations = pgTable(
+  "media_provider_operations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    streamId: uuid("stream_id")
+      .notNull()
+      .references(() => streams.id, { onDelete: "cascade" }),
+    resourceId: uuid("resource_id").references(() => mediaProviderResources.id, {
+      onDelete: "set null",
+    }),
+    action: mediaProviderOperationAction("action").notNull(),
+    state: mediaProviderOperationState("state").default("pending").notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    requestHash: char("request_hash", { length: 64 }).notNull(),
+    reason: text("reason").notNull(),
+    attempts: smallint("attempts").default(0).notNull(),
+    providerRequestId: varchar("provider_request_id", { length: 180 }),
+    safeResult: jsonb("safe_result").$type<Record<string, unknown>>(),
+    errorCode: varchar("error_code", { length: 120 }),
+    requestedAt: timestamp("requested_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("media_provider_operations_idempotency_unique").on(table.idempotencyKey),
+    uniqueIndex("media_provider_operations_one_pending_per_stream")
+      .on(table.streamId)
+      .where(sql`${table.state} = 'pending'`),
+    index("media_provider_operations_stream_requested_idx").on(table.streamId, table.requestedAt),
+    check("media_provider_operations_attempts_check", sql`${table.attempts} >= 0`),
+  ],
+);
+
 export const rightsWindows = pgTable(
   "rights_windows",
   {
@@ -1115,6 +1199,8 @@ export type Sport = typeof sports.$inferSelect;
 export type Competition = typeof competitions.$inferSelect;
 export type Event = typeof events.$inferSelect;
 export type Stream = typeof streams.$inferSelect;
+export type MediaProviderResource = typeof mediaProviderResources.$inferSelect;
+export type MediaProviderOperation = typeof mediaProviderOperations.$inferSelect;
 export type RightsWindow = typeof rightsWindows.$inferSelect;
 export type Follow = typeof follows.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;

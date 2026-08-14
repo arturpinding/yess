@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
+const localMediaSources = isDevelopment ? " http://127.0.0.1:8090 http://localhost:8090" : "";
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -8,8 +9,8 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "media-src 'self' blob: https://test-streams.mux.dev",
-  "connect-src 'self' https://test-streams.mux.dev",
+  `media-src 'self' blob: https://test-streams.mux.dev${localMediaSources}`,
+  `connect-src 'self' https://test-streams.mux.dev${localMediaSources}`,
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",

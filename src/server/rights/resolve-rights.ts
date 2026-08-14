@@ -3,11 +3,13 @@ import {
   evaluateEntitlement,
   type EntitlementGrant,
 } from "@/server/entitlements/evaluate-entitlement";
+import { compareRightsPriorityDescending } from "@/server/rights/priority";
 
 export type RightsScope =
   | { kind: "global" }
   | { kind: "competition"; competitionId: string }
-  | { kind: "event"; eventId: string };
+  | { kind: "event"; eventId: string }
+  | { kind: "stream"; streamId: string };
 
 export interface RightsTerritory {
   /** `include` applies only inside the list; `exclude` applies everywhere outside it. */
@@ -37,6 +39,8 @@ export interface RightsWindow {
 }
 
 export interface RightsResolutionContext extends EventContentContext {
+  /** Present when resolving policy for one concrete playback candidate. */
+  streamId?: string;
   profileId: string;
   countryCode: string;
   now: Date;
@@ -65,7 +69,10 @@ export type RightsResolution =
       windowId?: string;
     };
 
-function scopeMatches(scope: RightsScope, context: EventContentContext): boolean {
+function scopeMatches(
+  scope: RightsScope,
+  context: EventContentContext & { streamId?: string },
+): boolean {
   switch (scope.kind) {
     case "global":
       return true;
@@ -73,11 +80,15 @@ function scopeMatches(scope: RightsScope, context: EventContentContext): boolean
       return scope.competitionId === context.competitionId;
     case "event":
       return scope.eventId === context.eventId;
+    case "stream":
+      return scope.streamId === context.streamId;
   }
 }
 
 function scopeSpecificity(scope: RightsScope): number {
   switch (scope.kind) {
+    case "stream":
+      return 4;
     case "event":
       return 3;
     case "competition":
@@ -156,7 +167,8 @@ export function resolveRights(
   candidates.sort((left, right) => {
     const specificity = scopeSpecificity(right.scope) - scopeSpecificity(left.scope);
     if (specificity !== 0) return specificity;
-    if (right.priority !== left.priority) return right.priority - left.priority;
+    const priority = compareRightsPriorityDescending(left, right);
+    if (priority !== 0) return priority;
     return left.id.localeCompare(right.id);
   });
 

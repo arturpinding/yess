@@ -28,4 +28,32 @@ describe("environment validation", () => {
       }),
     ).toThrow();
   });
+
+  it("requires provider URL and token together", () => {
+    expect(() =>
+      parseEnvironment({
+        ...validEnvironment,
+        MEDIA_PROVIDER_URL: "http://127.0.0.1:8090",
+      }),
+    ).toThrow();
+    expect(
+      parseEnvironment({
+        ...validEnvironment,
+        MEDIA_PROVIDER_URL: "http://127.0.0.1:8090",
+        MEDIA_PROVIDER_TOKEN: "provider-token-that-is-at-least-thirty-two-characters",
+      }),
+    ).toMatchObject({ MEDIA_PROVIDER_URL: "http://127.0.0.1:8090" });
+  });
+
+  it("requires HTTPS for a production provider endpoint", () => {
+    expect(() =>
+      parseEnvironment({
+        ...validEnvironment,
+        NODE_ENV: "production",
+        APP_ORIGIN: "https://rada.example",
+        MEDIA_PROVIDER_URL: "http://media-provider.internal",
+        MEDIA_PROVIDER_TOKEN: "provider-token-that-is-at-least-thirty-two-characters",
+      }),
+    ).toThrow();
+  });
 });

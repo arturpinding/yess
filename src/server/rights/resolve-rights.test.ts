@@ -98,4 +98,61 @@ describe("rights resolution", () => {
       window: { id: "rights-1" },
     });
   });
+
+  it("matches stream policy only for that candidate and ranks it above event policy", () => {
+    const streamAllow = rights({
+      id: "stream-allow",
+      scope: { kind: "stream", streamId: "stream-2" },
+      priority: 1,
+    });
+    const eventDeny = rights({
+      id: "event-deny",
+      priority: 100,
+      effect: "deny",
+      delivery: { kind: "none" },
+    });
+
+    expect(
+      resolveRights([eventDeny, streamAllow], { ...baseContext, streamId: "stream-2" }),
+    ).toMatchObject({ allowed: true, window: { id: "stream-allow" } });
+    expect(
+      resolveRights([eventDeny, streamAllow], { ...baseContext, streamId: "stream-1" }),
+    ).toEqual({ allowed: false, reason: "rights-denied", windowId: "event-deny" });
+  });
+
+  it("fails closed on equally ranked conflicting stream policies", () => {
+    const first = rights({
+      id: "stream-a",
+      scope: { kind: "stream", streamId: "stream-1" },
+      priority: 50,
+    });
+    const second = rights({
+      id: "stream-b",
+      scope: { kind: "stream", streamId: "stream-1" },
+      priority: 50,
+      effect: "deny",
+      delivery: { kind: "none" },
+    });
+
+    expect(resolveRights([first, second], { ...baseContext, streamId: "stream-1" })).toEqual({
+      allowed: false,
+      reason: "conflicting-rights",
+    });
+  });
+
+  it("prefers the higher numeric priority within the same scope", () => {
+    const lowerPriorityAllow = rights({ id: "lower-allow", priority: 10 });
+    const higherPriorityDeny = rights({
+      id: "higher-deny",
+      priority: 20,
+      effect: "deny",
+      delivery: { kind: "none" },
+    });
+
+    expect(resolveRights([lowerPriorityAllow, higherPriorityDeny], baseContext)).toEqual({
+      allowed: false,
+      reason: "rights-denied",
+      windowId: "higher-deny",
+    });
+  });
 });

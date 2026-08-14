@@ -2,11 +2,17 @@
 
 Last reviewed: 2026-08-14
 
-The repository's control room is a development-only operator tool: it really updates the local PostgreSQL event and playback-source records, and those records affect later catalogue reads and playback authorization. It does not control an encoder, packager, origin, CDN, rights contract, billing provider, notification provider or production schedule feed. The production page and admin APIs deliberately return 404; do not remove those guards before staff SSO/MFA, server-side RBAC, attributable audit and provider integrations are ready.
+The repository's control room is a development-only operator tool: it updates local PostgreSQL event, playback-source and technical rights records, and it can control the supplied loopback synthetic FFmpeg/HLS provider. Those changes affect later catalogue reads and playback authorization. It does not operate a production encoder, packager, origin or CDN; create a legal rights contract; or call a billing, notification or production schedule provider. The production page and admin APIs deliberately return 404; do not remove those guards before staff SSO/MFA, server-side RBAC, attributable audit and contracted provider integrations are ready.
 
 ## Implemented local control room
 
-Start the application normally, then open <http://localhost:3000/et/admin> or <http://localhost:3000/en/admin>. No staff login is required in development, by current product decision. That makes this a trusted-local tool only: bind the development server to loopback and do not tunnel or expose it to an untrusted network.
+Start the application normally. To exercise media production, also run the provider in a second terminal:
+
+```bash
+npm run media:provider
+```
+
+Then open <http://localhost:3000/et/admin> or <http://localhost:3000/en/admin>. No staff login is required in development, by current product decision. That makes this a trusted-local tool only: both services bind to loopback by default; do not tunnel or expose them to an untrusted network. FFmpeg must be available on `PATH` for start to succeed.
 
 ### Change what RADA offers for playback
 
@@ -14,9 +20,32 @@ Start the application normally, then open <http://localhost:3000/et/admin> or <h
 2. Use **Add fallback source** to attach a new WebRTC, LL-HLS, HLS or official-external record to an event. Provider plus provider reference must be unique. An internal protocol requires a playback URL; an external record requires the official destination instead.
 3. Source ordering for a general right is state first (live, ready, degraded, ended, provisioning, unavailable), then protocol (WebRTC, LL-HLS, HLS, external), then smaller numeric priority. A stream-specific rights window still pins its named source.
 4. Adding or editing a source does not grant viewing rights. Playback authorization continues to apply event/competition/stream rights, territory, time, entitlement, maturity and concurrency before disclosing a locator.
-5. The change is catalogue metadata. It does not start or stop upstream contribution, create a WHEP endpoint, publish an HLS manifest, switch a CDN route, rotate a provider credential or verify that the entered URL is healthy.
+5. A generic source change remains catalogue metadata: it does not contact an arbitrary URL or infer that it is healthy. Provider controls are available only for an HLS source registered as `local-ffmpeg`.
 
-The stream state is therefore RADA's current operational belief, not a command sent to media infrastructure. Marking a record live makes it the preferred candidate under applicable rights; it cannot make a dead upstream signal play.
+The local-source preset fills protocol `hls`, provider `local-ffmpeg`, a safe generated provider reference and its loopback playlist URL. Save that source first, then use **Local media production** for the provider lifecycle. Do not manually mark an unreachable generic source live and treat it as provider evidence.
+
+### Control synthetic local media
+
+The lifecycle panel sends real commands to the second-terminal provider:
+
+1. **Provision** creates the exact resource directory for the source reference.
+2. **Start** launches FFmpeg over a generated 854x480 test pattern and sine audio, then waits for a real HLS playlist. The stream remains non-playable while merely provisioned or encoding.
+3. **Publish** makes the manifest and segments available and updates a healthy stream to `live`.
+4. **Refresh** checks the observed encoder/manifest health without changing desired state.
+5. **Unpublish** immediately makes media GETs return not found while allowing the encoder to keep running.
+6. **Stop** terminates FFmpeg and marks the stream ended. A published resource must be unpublished first.
+
+Each command requires a reason, the latest stream `updatedAt`, and an `Idempotency-Key`. PostgreSQL records the desired resource state and pending operation before the external call, then records the observed state, safe result/error, provider request ID and audit outcome. Reusing a key with the same request returns the stored result; reusing it for different input is rejected. One pending operation is allowed per stream. If an operation is still pending after five minutes, use **Refresh** with a new idempotency key: the server audits and marks the abandoned operation failed, then asks the provider for observed state. It will not replay an outcome-unknown start/publish/stop command. The separate provider service also deduplicates its bounded in-process request history, but PostgreSQL is the durable control-plane record.
+
+Generated output is standard HLS under `.local-media/` and is served directly by the provider, not proxied through Next.js. This proves the local lifecycle works; it does not measure production latency, redundancy, scale or rights compliance. Restarting the local provider loses its in-memory process/resource observations; use refresh to reconcile fail-closed, and reprovision/restart as appropriate.
+
+### Change technical viewing rights
+
+Under **Viewing rights**, create or edit a window for a competition, event, stream or media asset. Choose live, replay or highlight; global or two-letter territory; free, entitled, official-external-only or unavailable access; UTC-backed Tallinn times; DVR/recording; concurrency; legal destination; rights holder/reference; and priority. Entitled access requires a product, external-only access requires an HTTP(S) legal destination, and unavailable access cannot grant DVR or recording. Higher numeric rights priority wins; equal-rank overlapping policy is rejected so ambiguity fails closed.
+
+**Stop access now** sends an access-only update to `unavailable`. The server clears product, external URL, concurrency, DVR and recording grants atomically, preserves the window for audit/review, and makes later authorization deny under that policy. Use this for an emergency local takedown. Deletion is intentionally narrower: only an inactive window on demo data can be deleted, with a reason and matching `updatedAt`; an active window must first be made unavailable rather than erased.
+
+These records are RADA's executable technical policy. Entering a rights holder or contract reference does not sign, extend, validate or replace a media-rights agreement. Production launch still requires legal approval and authoritative contract data.
 
 ### Correct event metadata
 
@@ -26,11 +55,11 @@ Normal status transitions are enforced. Entering live fills a missing actual sta
 
 ### Concurrency, deletion and audit
 
-- Every event write carries the version loaded with the form; every stream update/delete carries its last `updatedAt`. A stale tab receives a conflict and must refresh.
+- Every event write carries the version loaded with the form; every stream or rights update/delete and provider operation carries its last `updatedAt`. A stale tab receives a conflict and must refresh.
 - Every write requires a 3–500 character reason. Catalogue mutation and before/after audit row commit atomically. The local actor is null because staff identity is absent; source URL query values are redacted in audit snapshots.
 - A stream can be deleted only when it is a demo record in `ended` or `unavailable` state and has no unexpired authorization or recently heartbeating playback. The dialog requires the exact provider reference.
 - Stream deletion cascades its stream-specific rights windows, renditions and playback sessions. Treat it as destructive even though the audit snapshot and cascade counts remain; recreate the source manually if needed.
-- Admin mutations require exact-Origin/double-submit CSRF and use process-local token-hash rate limits. Those are useful development safeguards, not a replacement for authentication, authorization or shared production controls.
+- Admin mutations require exact-Origin/double-submit CSRF and use process-local token-hash rate limits. Provider operations additionally require a strict idempotency key and use the configured server-side provider registry and bearer token; the browser cannot supply a provider endpoint or credential. Those are useful development safeguards, not a replacement for authentication, authorization or shared production controls.
 
 ## Ownership
 

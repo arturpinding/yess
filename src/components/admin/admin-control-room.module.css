@@ -38,11 +38,61 @@
   padding-bottom: 14px;
 }
 
+.createActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
 .rightsHelp {
   max-width: 760px;
   margin: 0;
   color: var(--muted);
   font-size: 10px;
+}
+
+.policyNotice,
+.providerNotice {
+  display: flex;
+  max-width: 840px;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.policyNotice svg,
+.providerNotice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.providerNotice {
+  max-width: none;
+  margin-bottom: 14px;
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--line));
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+
+.providerNotice svg {
+  color: var(--warning);
+}
+
+.emptyMessage {
+  margin: 0;
+  padding: 22px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 11px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .createForm {
@@ -146,9 +196,28 @@
 .ended,
 .finished,
 .cancelled,
-.unavailable {
+.unavailable,
+.absent,
+.stopped,
+.failed {
   background: color-mix(in srgb, var(--muted) 13%, transparent);
   color: var(--muted);
+}
+
+.published,
+.free,
+.entitled,
+.provisioned,
+.succeeded {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.encoding,
+.external_only,
+.pending {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
 }
 
 .editor {
@@ -310,6 +379,96 @@
   font-size: 10px;
 }
 
+.providerGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.providerCard {
+  overflow: clip;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.providerHeader {
+  display: grid;
+  min-height: 66px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 13px;
+}
+
+.statusCard {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.statusCard small,
+.statusCard time {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.statusCard strong {
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.providerReason {
+  display: grid;
+  gap: 5px;
+  padding: 0 13px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.providerReason textarea {
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  resize: vertical;
+}
+
+.providerReason textarea:focus {
+  border-color: var(--accent);
+}
+
+.providerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 13px 0;
+}
+
+.providerCard > .feedback {
+  padding: 0 13px 4px;
+}
+
 .backdrop {
   position: fixed;
   z-index: 1000;
@@ -421,7 +580,7 @@
   }
 
   .formActions > button,
-  .createWrap > button {
+  .createActions > button {
     width: 100%;
   }
 
@@ -431,6 +590,24 @@
 
   .dialogActions > button {
     width: 100%;
+  }
+
+  .statusGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .providerActions > button {
+    flex: 1 1 calc(50% - 8px);
+  }
+}
+
+@media (max-width: 420px) {
+  .statusGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .providerActions > button {
+    flex-basis: 100%;
   }
 }
 

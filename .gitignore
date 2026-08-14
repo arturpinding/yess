@@ -33,6 +33,8 @@ npm-debug.log*
 
 # Generated demo media (source scripts and manifests stay tracked)
 public/demo-media/generated/
+.local-media/
 
 # Local scratch
 tmp.txt
+.vercel

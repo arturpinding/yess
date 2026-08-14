@@ -16,7 +16,7 @@ npm run build
 npm start
 ```
 
-The application listens on `http://localhost:3000`. Stop the database with `docker compose stop postgres`. `docker compose down` removes containers and the network but retains the named database volume; `docker compose down --volumes` destroys local database data and should be used only deliberately.
+The application listens on `http://localhost:3000`. To exercise the development media controls, ensure FFmpeg is on `PATH` and run `npm run media:provider` in a second terminal; it listens on loopback port 8090 and serves only generated test media. It is a separate process and is not included in the Next.js container. Stop the database with `docker compose stop postgres`. `docker compose down` removes containers and the network but retains the named database volume; `docker compose down --volumes` destroys local database data and should be used only deliberately.
 
 The database client is lazy and explicitly recognizes Next's production-build phase. When `DATABASE_URL` is absent during metadata collection, that phase may construct the client against an inert local default without connecting, so a database secret need not be baked into the image. A production runtime without `DATABASE_URL` fails closed. A successful build therefore does not prove runtime database readiness; the readiness probe is the deployment gate.
 
@@ -60,24 +60,29 @@ Media authorization endpoint
 
 Keep web and media data planes separate. Application autoscaling handles metadata and authorization requests, not video bandwidth.
 
-The current production proxy deliberately returns 404 for `/{et,en}/admin`. Keep this perimeter denial until staff SSO, MFA, server-side RBAC and audited editorial/operator mutations are implemented and verified. The development view is not an operations console.
+The application deliberately returns 404 for `/{et,en}/admin` and its event/source/rights/provider mutation APIs when `NODE_ENV=production`; retain a matching perimeter denial. Keep these guards until staff SSO, MFA, server-side RBAC and attributable audited editorial/operator mutations are implemented and verified. The development view and loopback FFmpeg service are not production operations infrastructure.
 
 ## Environment and secrets
 
-| Variable               |  Required   | Production treatment                                                                                                               |
-| ---------------------- | :---------: | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`         |     yes     | TLS-enforced least-privilege role; use a pooled application URL and a separate migration role                                      |
-| `SESSION_SECRET`       |     yes     | >=32 random bytes, independent key, stored in secret manager, versioned rotation                                                   |
-| `MEDIA_SIGNING_SECRET` |     yes     | >=32 random bytes, distinct from session key; replace symmetric local design with managed/versioned media keys where vendor allows |
-| `APP_ORIGIN`           |     yes     | canonical HTTPS origin; used for origin/CSRF policy                                                                                |
-| `DEFAULT_COUNTRY`      |     yes     | conservative two-letter fallback; unknown geo should fail closed when rights require territory certainty                           |
-| `LOG_LEVEL`            |     yes     | normally `info`; temporary debug logging must preserve redaction                                                                   |
-| `REDIS_URL`            | integration | TLS/authenticated shared store, private network and explicit key TTLs                                                              |
-| `PAYMENT_PROVIDER`     | integration | adapter selection only; credentials arrive through separate secret references                                                      |
-| `PUSH_PROVIDER`        | integration | adapter selection only; encrypt device tokens at rest                                                                              |
-| `EMAIL_PROVIDER`       | integration | adapter selection only; use signed/verified webhook callbacks                                                                      |
+| Variable                          |  Required   | Production treatment                                                                                                                  |
+| --------------------------------- | :---------: | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    |     yes     | TLS-enforced least-privilege role; use a pooled application URL and a separate migration role                                         |
+| `SESSION_SECRET`                  |     yes     | >=32 random bytes, independent key, stored in secret manager, versioned rotation                                                      |
+| `MEDIA_SIGNING_SECRET`            |     yes     | >=32 random bytes, distinct from session key; replace symmetric local design with managed/versioned media keys where vendor allows    |
+| `APP_ORIGIN`                      |     yes     | canonical HTTPS origin; used for origin/CSRF policy                                                                                   |
+| `DEFAULT_COUNTRY`                 |     yes     | conservative two-letter fallback; unknown geo should fail closed when rights require territory certainty                              |
+| `LOG_LEVEL`                       |     yes     | normally `info`; temporary debug logging must preserve redaction                                                                      |
+| `MEDIA_PROVIDER_URL`              | local/media | paired with `MEDIA_PROVIDER_TOKEN`; loopback HTTP is permitted only outside production, while production configuration requires HTTPS |
+| `MEDIA_PROVIDER_TOKEN`            | local/media | >=32-character server-only bearer credential; never expose it to the browser or commit a production value                             |
+| `LOCAL_MEDIA_PROVIDER_HOST`       | local only  | loopback bind for the supplied synthetic service; do not expose it publicly                                                           |
+| `LOCAL_MEDIA_PROVIDER_PORT`       | local only  | defaults to `8090`; must match the configured adapter/network policy                                                                  |
+| `LOCAL_MEDIA_PROVIDER_PUBLIC_URL` | local only  | base URL placed in generated playback locators; defaults to the loopback provider                                                     |
+| `REDIS_URL`                       | integration | TLS/authenticated shared store, private network and explicit key TTLs                                                                 |
+| `PAYMENT_PROVIDER`                | integration | adapter selection only; credentials arrive through separate secret references                                                         |
+| `PUSH_PROVIDER`                   | integration | adapter selection only; encrypt device tokens at rest                                                                                 |
+| `EMAIL_PROVIDER`                  | integration | adapter selection only; use signed/verified webhook callbacks                                                                         |
 
-The current environment schema rejects HTTP production origins, short secrets, matching session/media secrets and obvious placeholder secret values. Rotate keys with overlap: deploy verification for old+new key IDs, issue only the new key, wait for maximum token lifetime, then retire the old key. A single unversioned secret replacement logs out users or interrupts playback.
+The current environment schema rejects HTTP production origins/provider URLs, short secrets, matching session/media secrets, unpaired media-provider URL/token values and obvious placeholder secret values. Rotate keys with overlap: deploy verification for old+new key IDs, issue only the new key, wait for maximum token lifetime, then retire the old key. A single unversioned secret replacement logs out users or interrupts playback.
 
 ## Database release process
 
@@ -93,7 +98,7 @@ Never have every web replica race to run migrations at startup. Drizzle migratio
 
 ## CI/CD stages
 
-The checked-in GitHub Actions workflow installs the lockfile, checks formatting/lint/types, runs coverage-gated tests, migrates/seeds an isolated PostgreSQL service, builds the production bundle, and executes Playwright on mobile and desktop Chromium profiles. A production delivery pipeline should add:
+The checked-in GitHub Actions workflow installs the lockfile, checks formatting/lint/types, runs coverage-gated tests, migrates/seeds an isolated PostgreSQL service, builds the production bundle, installs and verifies FFmpeg, and executes Playwright on mobile and desktop Chromium profiles. A production delivery pipeline should add:
 
 1. dependency, secret, license, SAST and container scanning;
 2. image build once, provenance/SBOM generation and signing;
@@ -156,6 +161,7 @@ Media archives follow contract-specific retention. Replicate only when rights pe
 
 - [ ] Rights contracts and per-event rights records are approved by legal/editorial owners.
 - [ ] Production identity, payment, messaging, geo, shared-state, media and DRM adapters pass staging tests.
+- [ ] A contracted encoder/origin/CDN provider replaces the loopback synthetic registry entry, with reconciliation, failover and signed delivery tested.
 - [ ] Staff SSO/MFA, route-level RBAC and audit enforcement are complete before replacing the production admin hard-404.
 - [ ] Database migration and point-in-time restore are rehearsed.
 - [ ] Signing-key rotation and emergency media revocation are rehearsed.

@@ -67,6 +67,11 @@ export default async function AdminPage({ params }: { params: Promise<{ locale: 
         initialStreams={data.streams}
         initialEvents={data.events}
         venues={data.venues}
+        initialRights={data.rights}
+        rightsTargets={data.rightsTargets}
+        products={data.products}
+        mediaResources={data.mediaResources}
+        mediaOperations={data.mediaOperations}
       />
 
       <section className="panel">

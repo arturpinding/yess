@@ -308,13 +308,13 @@ This is an authenticated snapshot download, not a long-lived secret subscription
 
 The following routes back the local <code>/{locale}/admin</code> control room. They perform real PostgreSQL mutations, but only when <code>NODE_ENV</code> is not <code>production</code>. They intentionally have no staff login or role check yet; every route returns <code>404 not_found</code> before CSRF parsing or database access in production. Run them only on a trusted local development host.
 
-All unsafe calls require the same exact-Origin and double-submit CSRF check described above. The browser control room creates the CSRF cookie/header pair; a development session is not required. Responses are private and non-cacheable, include a request ID, and expose rate-limit headers. The process-local limits are 60 stream mutations/minute/CSRF-token hash and 30 event mutations/minute/CSRF-token hash.
+All unsafe calls require the same exact-Origin and double-submit CSRF check described above. The browser control room creates the CSRF cookie/header pair; a development session is not required. Responses are private and non-cacheable, include a request ID, and expose rate-limit headers. The process-local limits are 60 stream/provider mutations, 30 rights mutations and 30 event mutations per minute per CSRF-token hash.
 
-These development routes are deliberately absent from the lightweight runtime OpenAPI document because they are not a production or partner surface. Their complete current contract is documented here.
+The lightweight runtime OpenAPI document inventories these development routes so tooling can discover them, but they are not a production or partner surface. Their complete current contract and safety constraints are documented here.
 
 #### POST /api/v1/admin/streams
 
-Creates a demo playback-source record for an existing event. It does not provision a provider, encoder, packager, origin or CDN, and it does not create a rights window.
+Creates a demo playback-source record for an existing event. Creation alone does not provision a provider, encoder, packager, origin or CDN, and it does not create a rights window. A saved `local-ffmpeg` HLS source can subsequently use the dedicated operations endpoint below.
 
     {
       "eventId": "70000000-0000-4000-8000-000000000001",
@@ -398,6 +398,73 @@ Common stream errors:
 |    409 | <code>active_playback_exists</code>       | delete targeted a source with a current playback lease |
 |    429 | <code>rate_limited</code>                 | local stream-mutation limit exceeded                   |
 
+#### POST /api/v1/admin/streams/{streamId}/operations
+
+Executes one lifecycle command through the server-selected media-provider adapter. This implementation accepts only an HLS stream whose stored provider is <code>local-ffmpeg</code>; the request cannot supply a provider URL or credential. Header <code>Idempotency-Key</code> is required, 8–180 characters, and limited to letters, numbers, dot, underscore, colon and hyphen.
+
+    {
+      "action": "publish",
+      "reason": "Synthetic manifest passed the local readiness check",
+      "expectedUpdatedAt": "2026-08-14T12:00:00.000Z"
+    }
+
+<code>action</code> is <code>provision</code>, <code>start</code>, <code>publish</code>, <code>unpublish</code>, <code>stop</code> or <code>refresh</code>. The local transition order is provision, start, publish, unpublish, then stop; refresh is observation-only. A published resource must be unpublished before stop. Provisioned and encoding resources map the catalogue stream to <code>provisioning</code>; a healthy published resource maps to <code>live</code>, an unhealthy published resource to <code>degraded</code>, stopped to <code>ended</code>, and absent/failed to <code>unavailable</code>.
+
+Before the provider call, PostgreSQL stores the desired resource state and a unique pending operation. On completion it stores observed state, safe result/error, provider request ID, operation timestamps and audit. Repeating the identical request with the same key returns the stored successful result; changing any request-bound value under that key returns <code>409 idempotency_conflict</code>. Only one operation may remain pending per stream. A pending operation younger than five minutes blocks another command. After five minutes its outcome is treated as unknown: only <code>refresh</code> with a new idempotency key may mark the abandoned operation failed and reconcile observed provider state. The server never blindly replays the original state-changing command.
+
+Success is <code>200 { "data": { "operation": AdminMediaOperation, "resource": AdminMediaResource, "stream": AdminStream }, "requestId": "..." }</code>. A provider rejection/unreachable response is recorded as failed before the API returns its bounded error. Additional errors include <code>400 invalid_idempotency_key</code>, <code>409 operation_in_progress</code>, <code>409 stale_operation_requires_refresh</code>, <code>409 stale_operation_requires_new_idempotency_key</code>, <code>409 invalid_provider_transition</code>, <code>409 must_unpublish_first</code>, <code>409 version_conflict</code>, <code>422 provider_not_configured</code>, <code>422 provider_protocol_unsupported</code> and <code>502 provider_unreachable</code>. Production returns <code>404 not_found</code> before attempting the provider.
+
+#### POST /api/v1/admin/rights-windows
+
+Creates executable technical authorization policy; it does not create or validate a legal contract.
+
+    {
+      "reason": "Enter the approved local demo policy",
+      "target": { "type": "event", "id": "70000000-0000-4000-8000-000000000001" },
+      "contentKind": "live",
+      "countryCode": "EE",
+      "access": "free",
+      "requiredProductId": null,
+      "startsAt": "2026-08-14T12:00:00.000Z",
+      "endsAt": "2026-08-14T16:00:00.000Z",
+      "dvrAllowed": false,
+      "recordingAllowed": false,
+      "maxConcurrentStreams": 2,
+      "externalWatchUrl": null,
+      "rightsHolder": "Fictional demo rights holder",
+      "contractReference": "DEMO-ONLY",
+      "priority": 100
+    }
+
+Target type is <code>competition</code>, <code>event</code>, <code>stream</code> or <code>media_asset</code>; content is <code>live</code>, <code>replay</code> or <code>highlight</code>; access is <code>free</code>, <code>entitled</code>, <code>external_only</code> or <code>unavailable</code>. Country is an uppercased two-letter code or null for global policy. Entitled access requires an existing product; external-only requires an absolute credential-free HTTP(S) legal destination; other access modes prohibit those respective fields. Concurrency applies only to internal playback, DVR only to live, and unavailable cannot grant DVR or recording. End is exclusive and must be later than start. Higher numeric priority wins; overlapping effective scope/content/territory/time at the same priority is rejected rather than resolved ambiguously.
+
+Created response: <code>201 { "data": AdminRightsWindow, "requestId": "..." }</code>. The target must resolve through current catalogue data. The mutation and <code>rights_window.created</code> audit row commit in one transaction.
+
+#### PATCH /api/v1/admin/rights-windows/{rightsWindowId}
+
+Updates at least one create field and requires <code>reason</code> plus the latest <code>expectedUpdatedAt</code>. The merged policy is revalidated, its target and product are resolved, equal-rank overlap is rejected, and a stale timestamp returns <code>409 version_conflict</code>.
+
+An emergency access-only patch is intentionally concise:
+
+    {
+      "reason": "Apply the requested emergency local takedown",
+      "expectedUpdatedAt": "2026-08-14T12:00:00.000Z",
+      "access": "unavailable"
+    }
+
+The server atomically clears <code>requiredProductId</code>, <code>externalWatchUrl</code>, <code>maxConcurrentStreams</code>, <code>dvrAllowed</code> and <code>recordingAllowed</code>, preserves the policy row and writes <code>rights_window.updated</code> audit. This affects later authorization immediately; it does not withdraw a third-party CDN object or constitute legal notice to a rights holder. Success is <code>200 { "data": AdminRightsWindow, "requestId": "..." }</code>.
+
+#### DELETE /api/v1/admin/rights-windows/{rightsWindowId}
+
+    {
+      "reason": "Remove the expired duplicate demo policy",
+      "expectedUpdatedAt": "2026-08-14T12:00:00.000Z"
+    }
+
+Deletion is allowed only when the window is not currently active and its resolved target is demo data. Active policy returns <code>409 active_rights_window</code>; use the emergency unavailable update instead of erasing it. Non-demo targets return <code>403 demo_target_required</code>. Success is <code>200 { "data": { "id": "...", "deleted": true }, "requestId": "..." }</code>, with the before snapshot retained in <code>rights_window.deleted</code> audit.
+
+Rights-route errors use the common <code>400 invalid_request</code>, <code>403 csrf_failed</code>, <code>404 rights_window_not_found</code>/<code>competition_not_found</code>/<code>event_not_found</code>/<code>stream_not_found</code>/<code>media_asset_not_found</code>/<code>product_not_found</code>/<code>not_found</code>, <code>409 media_asset_event_required</code>/<code>version_conflict</code>/<code>overlapping_policy_conflict</code> and <code>429 rate_limited</code> envelope as applicable. All three endpoints hard-404 in production.
+
 #### PATCH /api/v1/admin/events/{eventId}
 
 Updates one event and its audit entry atomically:
@@ -453,19 +520,19 @@ The cookie jar contains a development session credential. Delete it when finishe
 
 These are HTML routes, not JSON API contracts:
 
-| Route                       | Purpose                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| `/`                         | redirect to Estonian locale                                                          |
-| `/{locale}`                 | live, soon, Estonians today, followed feed, replay/highlights and schedule preview   |
-| `/{locale}/schedule`        | complete Tallinn-time schedule                                                       |
-| `/{locale}/discover`        | cross-entity discovery/search                                                        |
-| `/{locale}/athletes/{slug}` | athlete biography, facts, club, competitions/events/results/media and follow state   |
-| `/{locale}/teams/{slug}`    | team/club profile, athletes/events and follow state                                  |
-| `/{locale}/events/{slug}`   | status, Tallinn time/countdown, player gate, rights, participants, timeline/related  |
-| `/{locale}/my-sports`       | followed entities, personalized schedule and calendar export                         |
-| `/{locale}/notifications`   | in-app inbox, read state and demo notification controls                              |
-| `/{locale}/settings`        | local theme/spoiler/data-saver plus global in-app notification/account foundations   |
-| `/{locale}/admin`           | development-only event/source control room with real local mutations; production 404 |
+| Route                       | Purpose                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| `/`                         | redirect to Estonian locale                                                         |
+| `/{locale}`                 | live, soon, Estonians today, followed feed, replay/highlights and schedule preview  |
+| `/{locale}/schedule`        | complete Tallinn-time schedule                                                      |
+| `/{locale}/discover`        | cross-entity discovery/search                                                       |
+| `/{locale}/athletes/{slug}` | athlete biography, facts, club, competitions/events/results/media and follow state  |
+| `/{locale}/teams/{slug}`    | team/club profile, athletes/events and follow state                                 |
+| `/{locale}/events/{slug}`   | status, Tallinn time/countdown, player gate, rights, participants, timeline/related |
+| `/{locale}/my-sports`       | followed entities, personalized schedule and calendar export                        |
+| `/{locale}/notifications`   | in-app inbox, read state and demo notification controls                             |
+| `/{locale}/settings`        | local theme/spoiler/data-saver plus global in-app notification/account foundations  |
+| `/{locale}/admin`           | development-only event/source/rights/provider control room; production 404          |
 
 `locale` is `et` or `en`; unknown locale/entity slugs return the localized not-found state. Additional page routes should be added here only after they exist.
 

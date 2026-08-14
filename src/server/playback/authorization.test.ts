@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   appendPlaybackToken,
+  isPlayableAuthorizationStreamState,
   mapDatabaseRightsWindow,
   normalizeHttpUrl,
   orderAuthorizationStreams,
   playerSourceKind,
+  resolvePlaybackRights,
   type AuthorizationStream,
   type DatabaseRightsWindow,
 } from "./authorization";
@@ -58,6 +60,17 @@ const baseRights: DatabaseRightsWindow = {
 };
 
 describe("playback authorization mapping", () => {
+  it.each([
+    ["ready", true],
+    ["live", true],
+    ["degraded", true],
+    ["provisioning", false],
+    ["ended", false],
+    ["unavailable", false],
+  ] as const)("treats %s stream state playability as %s", (state, expected) => {
+    expect(isPlayableAuthorizationStreamState(state)).toBe(expected);
+  });
+
   it("maps transport names and deterministically prefers ultra-low latency", () => {
     expect(playerSourceKind("webrtc")).toBe("whep");
     expect(playerSourceKind("ll_hls")).toBe("ll-hls");
@@ -65,7 +78,7 @@ describe("playback authorization mapping", () => {
   });
 
   it("passes only an opaque stream id into rights resolution", () => {
-    const mapped = mapDatabaseRightsWindow(baseRights, "event-1", "competition-1", streams, 4);
+    const mapped = mapDatabaseRightsWindow(baseRights, "event-1", streams, 4);
     expect(mapped.delivery).toEqual({ kind: "internal", streamId: "whep" });
     expect(JSON.stringify(mapped)).not.toContain("media.example");
     expect(mapped.territory).toEqual({ mode: "include", countryCodes: ["ee"] });
@@ -80,20 +93,201 @@ describe("playback authorization mapping", () => {
           externalWatchUrl: "https://partner.example/watch",
         },
         "event-1",
-        "competition-1",
         [],
         1,
       ).delivery,
     ).toEqual({ kind: "external", url: "https://partner.example/watch", label: "Demo holder" });
     expect(
-      mapDatabaseRightsWindow(
-        { ...baseRights, access: "unavailable" },
-        "event-1",
-        "competition-1",
-        streams,
-        1,
-      ).effect,
+      mapDatabaseRightsWindow({ ...baseRights, access: "unavailable" }, "event-1", streams, 1)
+        .effect,
     ).toBe("deny");
+  });
+
+  it("keeps stream-targeted policy scoped to its exact source", () => {
+    const mapped = mapDatabaseRightsWindow(
+      { ...baseRights, eventId: null, streamId: "hls" },
+      "event-1",
+      streams,
+      3,
+      "whep",
+    );
+
+    expect(mapped.scope).toEqual({ kind: "stream", streamId: "hls" });
+    expect(mapped.delivery).toEqual({ kind: "internal", streamId: "hls" });
+  });
+
+  it("falls back after a source-specific denial and applies competition policy to the fallback", () => {
+    const resolution = resolvePlaybackRights(
+      [
+        { ...baseRights, id: "deny-whep", eventId: null, streamId: "whep", access: "unavailable" },
+        {
+          ...baseRights,
+          id: "competition-allow",
+          eventId: null,
+          competitionId: "competition-1",
+        },
+      ],
+      streams,
+      {
+        profileId: "profile-1",
+        eventId: "event-1",
+        competitionId: "competition-1",
+        sportId: "sport-1",
+        contentType: "live",
+        countryCode: "EE",
+        now: new Date("2026-08-14T10:00:00.000Z"),
+        entitlements: [],
+        activePlaybackCount: 0,
+      },
+      5,
+    );
+
+    expect(resolution).toMatchObject({
+      allowed: true,
+      stream: { id: "hls" },
+      delivery: { kind: "internal", streamId: "hls" },
+      window: { id: "competition-allow" },
+    });
+  });
+
+  it("lets an explicit stream allow outrank an event deny without bypassing that deny elsewhere", () => {
+    const resolution = resolvePlaybackRights(
+      [
+        { ...baseRights, id: "event-deny", access: "unavailable", priority: 500 },
+        { ...baseRights, id: "allow-hls", eventId: null, streamId: "hls", priority: 1 },
+      ],
+      streams,
+      {
+        profileId: "profile-1",
+        eventId: "event-1",
+        competitionId: "competition-1",
+        sportId: "sport-1",
+        contentType: "live",
+        countryCode: "EE",
+        now: new Date("2026-08-14T10:00:00.000Z"),
+        entitlements: [],
+        activePlaybackCount: 0,
+      },
+      5,
+    );
+
+    expect(resolution).toMatchObject({
+      allowed: true,
+      stream: { id: "hls" },
+      window: { id: "allow-hls" },
+    });
+  });
+
+  it("fails closed with the first ordered denial when every candidate is denied or unmatched", () => {
+    const resolution = resolvePlaybackRights(
+      [{ ...baseRights, id: "deny-whep", eventId: null, streamId: "whep", access: "unavailable" }],
+      streams,
+      {
+        profileId: "profile-1",
+        eventId: "event-1",
+        competitionId: "competition-1",
+        sportId: "sport-1",
+        contentType: "live",
+        countryCode: "EE",
+        now: new Date("2026-08-14T10:00:00.000Z"),
+        entitlements: [],
+        activePlaybackCount: 0,
+      },
+      5,
+    );
+
+    expect(resolution).toEqual({
+      allowed: false,
+      reason: "rights-denied",
+      windowId: "deny-whep",
+    });
+  });
+
+  it("keeps external-only delivery available without a playable internal source", () => {
+    const resolution = resolvePlaybackRights(
+      [
+        {
+          ...baseRights,
+          access: "external_only",
+          externalWatchUrl: "https://partner.example/watch",
+        },
+      ],
+      streams.map((stream) => ({ ...stream, state: "ended" as const })),
+      {
+        profileId: "profile-1",
+        eventId: "event-1",
+        competitionId: "competition-1",
+        sportId: "sport-1",
+        contentType: "live",
+        countryCode: "EE",
+        now: new Date("2026-08-14T10:00:00.000Z"),
+        entitlements: [],
+        activePlaybackCount: 0,
+      },
+      5,
+    );
+
+    expect(resolution).toMatchObject({
+      allowed: true,
+      stream: null,
+      delivery: { kind: "external", url: "https://partner.example/watch" },
+    });
+  });
+
+  it("preserves stream-scoped external-only delivery without reviving its ended transport", () => {
+    const ended = { ...streams[0]!, state: "ended" as const };
+    const resolution = resolvePlaybackRights(
+      [
+        {
+          ...baseRights,
+          eventId: null,
+          streamId: ended.id,
+          access: "external_only",
+          externalWatchUrl: "https://partner.example/stream-fallback",
+        },
+      ],
+      [ended],
+      {
+        profileId: "profile-1",
+        eventId: "event-1",
+        competitionId: "competition-1",
+        sportId: "sport-1",
+        contentType: "live",
+        countryCode: "EE",
+        now: new Date("2026-08-14T10:00:00.000Z"),
+        entitlements: [],
+        activePlaybackCount: 0,
+      },
+      5,
+    );
+
+    expect(resolution).toMatchObject({
+      allowed: true,
+      stream: null,
+      delivery: { kind: "external", url: "https://partner.example/stream-fallback" },
+    });
+  });
+
+  it("never authorizes an ended source", () => {
+    const ended = { ...streams[0]!, state: "ended" as const };
+    const resolution = resolvePlaybackRights(
+      [{ ...baseRights, eventId: null, streamId: ended.id }],
+      [ended],
+      {
+        profileId: "profile-1",
+        eventId: "event-1",
+        competitionId: "competition-1",
+        sportId: "sport-1",
+        contentType: "live",
+        countryCode: "EE",
+        now: new Date("2026-08-14T10:00:00.000Z"),
+        entitlements: [],
+        activePlaybackCount: 0,
+      },
+      5,
+    );
+
+    expect(resolution).toEqual({ allowed: false, reason: "no-rights" });
   });
 
   it("appends a token without discarding existing query parameters", () => {

@@ -2,7 +2,7 @@
 
 RADA is a bilingual, mobile-first sports discovery and viewing application for Estonia. It gives athlete-level following first-class status, brings major and smaller sports into one Tallinn-time schedule, preserves event context when a stream fails, and says explicitly whether an event is playable here, available from an official rights holder, or unavailable.
 
-This repository is a runnable **local product demo and production foundation**, not an operating broadcaster. Its people, clubs, competitions, events, results and contractual records are clearly marked fictional demo data. The only inline video is a public test stream. RADA owns no sports rights, does not rebroadcast third-party events, and requires rights contracts plus real media infrastructure before serving production video.
+This repository is a runnable **local product demo and production foundation**, not an operating broadcaster. Its people, clubs, competitions, events, results and contractual records are clearly marked fictional demo data. Development playback uses a public test asset or locally generated synthetic FFmpeg media. RADA owns no sports rights, does not rebroadcast third-party events, and requires rights contracts plus real media infrastructure before serving production video.
 
 ## What is implemented
 
@@ -14,10 +14,11 @@ The repository currently contains:
 - session-owned server-rendered personalization with a guaranteed-empty anonymous scope, plus framework-independent rules for event transitions, Tallinn day boundaries/DST, spoiler redaction, rights resolution, entitlement expiry, session/playback tokens, CSRF and rate limiting;
 - a PostgreSQL-backed in-app planner and worker for starting-soon, started and followed-athlete notices, with a global Settings control, athlete/team controls, scoped-over-global preference precedence and database-enforced idempotency;
 - a player abstraction that can select WHEP/WebRTC, LL-HLS, HLS or an official external destination, with ABR/manual quality, data saver, recovery/fallback, live edge, rights-controlled DVR, captions/audio controls, PiP, fullscreen, keyboard controls and privacy-conscious telemetry hooks; and
-- a development-only control room with real PostgreSQL mutations for event status/timing/copy/venue and playback-source creation, editing and guarded demo-source deletion, including reasons, before/after audit records, optimistic concurrency, confirmations, CSRF and local rate limits; and
+- a development-only control room with real PostgreSQL mutations for event metadata, playback sources and technical rights policies, including guarded emergency unavailability and deletion, reasons, before/after audit records, optimistic concurrency, confirmations, CSRF and local rate limits;
+- a loopback-only development media-provider service that starts FFmpeg over generated test video/audio, produces and serves an HLS playlist, and supports provision/start/publish/unpublish/stop/refresh through durable idempotent provider operations; and
 - structured/redacted logs, liveness/readiness conventions, container build, CI, coverage thresholds, Playwright mobile/desktop projects and production design/runbooks.
 
-The user-facing page/API inventory is documented in [docs/api.md](docs/api.md). Controls labelled as demo do not call real broadcasters, payments or notification providers.
+The user-facing page/API inventory is documented in [docs/api.md](docs/api.md). The local media controls call only the repository's synthetic FFmpeg service; they do not call a real broadcaster, CDN, payment or notification provider.
 
 ## What is not implemented or supplied
 
@@ -30,7 +31,7 @@ Production operation still requires:
 - geo-IP enforcement and an atomic shared concurrency/rate-limit/idempotency store;
 - authoritative feed triggers for schedule-change/result/highlight notices, push and email providers, service workers/native apps, and production notification delivery adapters;
 - consent-management/analytics vendors, finalized privacy notices/retention policy, DPIA and data-export/deletion orchestration;
-- production staff SSO/MFA/RBAC, tamper-evident audit storage, editorial/feed adapters, encoder/CDN provider control, feature-flag service and support tooling; and
+- production staff SSO/MFA/RBAC, tamper-evident audit storage, editorial/feed adapters, contracted encoder/CDN provider adapters, feature-flag service and support tooling; and
 - production observability, load/chaos/device testing, independent accessibility/security review and measured SLO evidence.
 
 The schema and policy modules make these integrations possible; they are not evidence that the integrations exist.
@@ -76,6 +77,7 @@ Prerequisites:
 - Node.js 22 or newer
 - npm 10 or newer
 - Docker Engine with Compose (for PostgreSQL)
+- FFmpeg on `PATH` to exercise the local synthetic media-provider lifecycle
 
 From the repository root:
 
@@ -92,6 +94,14 @@ npm run db:setup
 npm run dev
 ```
 
+To control a real local encoder and generated HLS output from the admin view, keep the application running and start the development media provider in a second terminal:
+
+```bash
+npm run media:provider
+```
+
+It listens on `127.0.0.1:8090` by default, accepts the matching development bearer token from `.env`, and serves only generated test media. Public catalogue browsing and the seeded public test asset do not require this second process.
+
 Open <http://localhost:3000>. The root redirects to Estonian; use the visible `EN`/`ET` switcher or open <http://localhost:3000/en>.
 
 A fresh browser's first server render is anonymous and receives an intentionally empty personalization scope. In development only, the hydrated client calls the CSRF-protected demo-session endpoint, receives an HttpOnly cookie and refreshes into the seeded profile owned by that session. Later server renders resolve that cookie and profile in PostgreSQL. If bootstrap is unavailable, public browsing remains anonymous; there are no real credentials. Production hard-disables the demo-session endpoint.
@@ -104,10 +114,12 @@ The control room makes real changes to the local PostgreSQL demo catalogue:
 
 - create or edit WebRTC, LL-HLS, HLS and official-external playback sources, including state, selection priority, locator, provider/reference, signed-access flag, DVR window and caption availability;
 - retire and then delete only an inactive demo source. Deletion is rejected for non-demo sources, active states or active playback, requires typing the provider stream reference, and removes dependent rights-window/rendition/playback rows through the schema cascade;
+- create and edit technical rights windows for a competition, event, stream or media asset, with live/replay/highlight, territory, access/product, time, DVR/recording, concurrency, legal destination, holder/reference and priority fields; immediately set one policy to unavailable, or delete only an inactive policy on a demo target;
+- for an HLS source whose provider is `local-ffmpeg`, provision its local resource, start the synthetic encoder, publish or unpublish its generated playlist, stop it after unpublishing, and refresh observed health;
 - edit bilingual event titles and status details, status, venue, scheduled start, actual start and end. The form displays `Europe/Tallinn`, converts to UTC, rejects nonexistent DST wall-clock times and uses a deterministic interpretation of the repeated autumn hour; and
 - record a 3–500 character reason for every mutation. Event updates use an integer version and stream updates/deletes use `updatedAt`, so a stale form returns a conflict rather than overwriting another operator.
 
-Changing a source changes what RADA can select for a future authorization; it does not start an encoder, publish media, create/extend rights, change entitlements or call a CDN/provider API. Applicable rights still decide whether the source may be exposed. All development admin page and API routes return a hard 404 in production until staff SSO/MFA and server-enforced RBAC are implemented.
+Provider commands persist desired and observed resource states plus an idempotent operation record, update the stream state from the provider result, and write an audit entry. Applicable rights still decide whether a published source may be exposed. The rights editor changes RADA's technical authorization policy only: it does not create, extend or prove a legal media-rights contract. All development admin page and API routes return a hard 404 in production until staff SSO/MFA and server-enforced RBAC are implemented.
 
 Re-running `npm run db:seed` is idempotent for fixed seed identities. Relative event times are set on first insert, so recreate the local volume if a much older demo schedule is no longer useful.
 
@@ -154,7 +166,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-E2E expects PostgreSQL to be running and demo data to be migrated/seeded.
+E2E expects PostgreSQL to be running and demo data to be migrated/seeded. Playwright starts and stops both the Next.js development server and the local synthetic media provider; the FFmpeg lifecycle case is desktop-only to avoid duplicate encoder processes.
 
 ## Demo media and data
 
@@ -170,23 +182,26 @@ Do not replace a seed URL with a sports broadcast unless the organization has co
 
 Recorded on **2026-08-14** against the final documented tree. A passing build or browser flow is not playback-latency evidence.
 
-| Check                                | Command/environment                                   | Observed result                                                                                                                                        |
-| ------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Locked dependency install            | clean checkout, `npm ci`                              | Pass                                                                                                                                                   |
-| Production dependency audit          | `npm audit --omit=dev`                                | 0 known vulnerabilities                                                                                                                                |
-| Full dependency audit                | `npm audit`                                           | 4 moderate development-only advisories in Drizzle Kit's nested `esbuild`; no safe stable dependency update was available at review time                |
-| Formatting                           | `npm run format:check`                                | Pass                                                                                                                                                   |
-| Lint                                 | `npm run lint`                                        | Pass, zero warnings                                                                                                                                    |
-| Static types                         | `npm run typecheck`                                   | Pass                                                                                                                                                   |
-| Unit/integration                     | `npm test`                                            | Pass; 32 files, 111 tests                                                                                                                              |
-| Coverage gate                        | `npm run test:coverage`                               | Pass; statements 73.99%, branches 65.33%, functions 78.13%, lines 76.34%; all 111 tests pass                                                           |
-| Migration + repeat seed              | local PostgreSQL 17                                   | Pass; 33 application tables, no migration/schema drift detected, second seed completed                                                                 |
-| In-app planning/delivery idempotency | isolated PostgreSQL planner/worker cycles             | First cycle inserted 5 and delivered 2 due rows; identical retry inserted 0 and delivered 0. This is a functional check, not delivery-latency evidence |
-| Native production build              | timed `npm run build`                                 | Pass in one local run: 27.58 s wall time, 738,828 KB peak RSS; `.next/standalone` 71 MiB and `.next/static` 1.6 MiB                                    |
-| Container image                      | timed Docker build and image/filesystem inspection    | Warning-free pass in 83.04 s; approximately 82.99 MB, runtime UID:GID `1001:1001`, no `.env` or scratch/test artifacts found                           |
-| Runtime health and production guard  | built runtime: live, ready, admin and SSR HTML probes | Pass; live/ready healthy, admin returned 404, and English SSR emitted `lang="en"`, dark theme and visible-spoiler attributes before hydration          |
-| Desktop/mobile browser flow          | Playwright Desktop Chrome + Pixel 7                   | 15 passed, 3 intentional mobile mutation skips in 1.7 min; axe dark/light, spoiler, player, admin control and critical journeys included               |
-| Manual responsive review             | stable desktop home, mobile athlete and event shots   | Visually inspected after the SSR theme-flash fix; this is not a WCAG conformance audit or a broad device-matrix result                                 |
+| Check                                | Command/environment                          | Observed result                                                                                                                                         |
+| ------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Locked dependency install            | clean checkout, `npm ci`                     | Pass                                                                                                                                                    |
+| Production dependency audit          | `npm audit --omit=dev`                       | 0 known vulnerabilities                                                                                                                                 |
+| Full dependency audit                | `npm audit`                                  | 4 moderate development-only advisories in Drizzle Kit's nested `esbuild`; no safe stable dependency update was available at review time                 |
+| Formatting                           | `npm run format:check`                       | Pass                                                                                                                                                    |
+| Lint                                 | `npm run lint`                               | Pass, zero warnings                                                                                                                                     |
+| Static types                         | `npm run typecheck`                          | Pass                                                                                                                                                    |
+| Unit/integration                     | `npm test`                                   | Pass; 42 files, 173 tests                                                                                                                               |
+| Coverage gate                        | `npm run test:coverage`                      | Pass; statements 73.29%, branches 65.83%, functions 77.39%, lines 75.4%; all 173 tests pass                                                             |
+| Migration + repeat seed              | local PostgreSQL 17                          | Pass; 35 application tables, no migration/schema drift detected, repeat seed completed                                                                  |
+| In-app planning/delivery idempotency | isolated PostgreSQL planner/worker cycles    | First cycle inserted 5 and delivered 2 due rows; identical retry inserted 0 and delivered 0. This is a functional check, not delivery-latency evidence  |
+| Native production build              | `npm run build`                              | Pass; all 26 application/API routes generated, including the rights and media-operation admin routes                                                    |
+| Container image                      | Docker build and image/filesystem inspection | Pass; 83,492,422 bytes, runtime user `nextjs`, and no `.env`, `.local-media`, Playwright or test-result artifacts found                                 |
+| Runtime health and production guard  | final container on local port 3100           | Pass; liveness 200, readiness/database 200, English home 200, and production admin 404                                                                  |
+| Desktop/mobile browser flow          | Playwright Desktop Chrome + Pixel 7          | 17 passed, 5 intentional duplicate-mobile mutation skips in 3.2 min; axe, spoiler, player, follows, notifications and admin mutations included          |
+| Local FFmpeg/HLS lifecycle           | desktop Playwright admin scenario            | Pass in 27.7 s; provision/start/publish produced a fetchable `#EXTM3U` manifest, unpublish returned 404, stop ended it, and cleanup left zero resources |
+| Responsive/accessibility automation  | Pixel 7/Desktop Chromium + axe               | Pass; no horizontal overflow and no tagged WCAG 2.2 A/AA axe violations in the checked admin/home dark/light views; not a conformance audit             |
+
+The V8 unit-coverage gate excludes database schema declarations plus the PostgreSQL/provider orchestrators whose execution occurs in child server/FFmpeg processes and cannot be merged into that report. Their real mutation paths are required in the PostgreSQL-backed Playwright gate; pure policy, route, adapter and UI modules remain under the stated thresholds.
 
 ### Performance and latency: targets versus measurements
 
@@ -235,13 +250,14 @@ The development admin page and mutation APIs are hard-404ed in production. They 
 
 - This is a web demo with anonymous SSR plus one development-only, session-owned seeded profile, not completed registration/login/recovery or multi-device profile synchronization.
 - Seed schedules use relative times at first insertion and are not connected to an authoritative live provider.
-- WebRTC and LL-HLS are player/interface capabilities; local seed playback is standard HLS and does not exercise real protocol failover.
+- WebRTC and LL-HLS are player/interface capabilities; local seed and generated playback are standard HLS and do not exercise real protocol failover.
 - HLS playback is unsigned in local development. There is no media-edge token verifier, geo-IP, DRM/license server or shared concurrency lease.
 - Payments, plans and entitlements have data/policy foundations but no money movement or provider webhook.
 - The PostgreSQL planner/worker implements starting-soon, started and followed-athlete in-app notices with scoped/global preference precedence and idempotent inserts. Schedule/venue-change and result/highlight rules exist but are not connected to an authoritative feed trigger; push/email delivery is absent.
 - Playback authorization has no production token-refresh/revocation or media-edge lease-heartbeat integration.
-- Admin controls mutate the local demo database but have no encoder/CDN/provider integration, cannot change a production stream or contract, have no staff identity/RBAC in development, and return 404 in production.
-- In-memory rate-limit/idempotency adapters are not safe across replicas.
+- Admin controls can drive the loopback synthetic FFmpeg/HLS provider and edit local technical rights policy, but they cannot change a production broadcaster/CDN stream or establish a legal contract. Development has no staff identity/RBAC, and every admin page/API returns 404 in production.
+- Process-local rate limits and the local provider's bounded replay cache are not safe across replicas; provider-operation idempotency itself is durable in PostgreSQL.
+- Recovery of an outcome-unknown provider operation is operator-triggered: after five minutes, a new-key **Refresh status** reconciles it safely. There is no background stale-operation janitor yet.
 - Browser/device coverage is intentionally small until production targets and DRM vendors are chosen.
 - No production latency, scale, uptime, accessibility-conformance or security-penetration claim has been made.
 

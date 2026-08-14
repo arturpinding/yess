@@ -15,6 +15,10 @@ import type {
 import type { Locale } from "@/i18n/config";
 import { tallinnDayKey } from "@/i18n/format";
 import { db } from "@/server/db/client";
+import { listAdminMediaResources } from "@/server/admin/media-operation";
+import { listAdminRightsWindows } from "@/server/admin/rights-control";
+import { isPlayableAuthorizationStreamState } from "@/server/playback/authorization";
+import { selectHighestPriorityRights } from "@/server/rights/priority";
 import {
   athleteTeamMemberships,
   athletes,
@@ -28,6 +32,7 @@ import {
   notificationPreferences,
   notifications,
   playbackSessions,
+  products,
   results,
   rightsWindows,
   sports,
@@ -50,8 +55,6 @@ const SPORT_ACCENTS: Record<string, string> = {
   football: "#6db477",
   tennis: "#d6cf54",
 };
-
-const visibleStreamStates = new Set(["ready", "live", "degraded"]);
 
 type EventRow = {
   id: string;
@@ -306,12 +309,9 @@ async function hydrateEventRows(rows: EventRow[], locale: Locale): Promise<Event
         right.endsAt > referenceAt,
     );
     const availabilityFor = (kind: "live" | "replay" | "highlight") => {
-      const candidates = applicableRights
-        .filter((right) => right.contentKind === kind)
-        .sort((left, right) => left.priority - right.priority);
-      const bestPriority = candidates[0]?.priority;
-      if (bestPriority === undefined) return "no_verified_stream" as const;
-      const preferred = candidates.filter((right) => right.priority === bestPriority);
+      const candidates = applicableRights.filter((right) => right.contentKind === kind);
+      const preferred = selectHighestPriorityRights(candidates);
+      if (preferred.length === 0) return "no_verified_stream" as const;
       if (preferred.some((right) => right.access === "unavailable")) {
         return "not_available_in_region" as const;
       }
@@ -320,12 +320,10 @@ async function hydrateEventRows(rows: EventRow[], locale: Locale): Promise<Event
       if (right.access === "external_only" && right.externalWatchUrl) {
         return "watch_on_partner" as const;
       }
-      const playableStates =
-        kind === "live" ? visibleStreamStates : new Set([...visibleStreamStates, "ended"]);
       const internal = eventStreams.find(
         (stream) =>
           stream.protocol !== "external" &&
-          playableStates.has(stream.state) &&
+          isPlayableAuthorizationStreamState(stream.state) &&
           (right.streamId === null || right.streamId === stream.id),
       );
       if (internal) return "watch_here" as const;
@@ -1253,80 +1251,123 @@ export async function getNotificationInbox(profileId: string, spoilerFree: boole
 }
 
 export async function getAdminOverview() {
-  const [eventRows, streamRows, venueRows, auditRows, collectionRows, userRows, playbackRows] =
-    await Promise.all([
-      db
-        .select({
-          id: events.id,
-          titleEt: events.titleEt,
-          titleEn: events.titleEn,
-          state: events.state,
-          scheduledStartAt: events.scheduledStartAt,
-          actualStartAt: events.actualStartAt,
-          endAt: events.endAt,
-          venueId: events.venueId,
-          venueName: venues.name,
-          statusDetailEt: events.statusDetailEt,
-          statusDetailEn: events.statusDetailEn,
-          version: events.version,
-          updatedAt: events.updatedAt,
-        })
-        .from(events)
-        .leftJoin(venues, eq(venues.id, events.venueId))
-        .orderBy(asc(events.scheduledStartAt))
-        .limit(200),
-      db
-        .select({
-          id: streams.id,
-          eventId: streams.eventId,
-          eventTitleEt: events.titleEt,
-          eventTitleEn: events.titleEn,
-          protocol: streams.protocol,
-          state: streams.state,
-          priority: streams.priority,
-          playbackLocator: streams.playbackLocator,
-          externalWatchUrl: streams.externalWatchUrl,
-          provider: streams.provider,
-          providerStreamRef: streams.providerStreamRef,
-          requiresSignedAccess: streams.requiresSignedAccess,
-          dvrWindowSeconds: streams.dvrWindowSeconds,
-          captionsAvailable: streams.captionsAvailable,
-          isDemo: streams.isDemo,
-          lastHealthyAt: streams.lastHealthyAt,
-          updatedAt: streams.updatedAt,
-        })
-        .from(streams)
-        .innerJoin(events, eq(events.id, streams.eventId))
-        .orderBy(asc(streams.priority)),
-      db
-        .select({
-          id: venues.id,
-          name: venues.name,
-          city: venues.city,
-          countryCode: venues.countryCode,
-        })
-        .from(venues)
-        .orderBy(asc(venues.name)),
-      db
-        .select({
-          id: auditLogs.id,
-          action: auditLogs.action,
-          entityType: auditLogs.entityType,
-          occurredAt: auditLogs.occurredAt,
-          reason: auditLogs.reason,
-        })
-        .from(auditLogs)
-        .orderBy(desc(auditLogs.occurredAt))
-        .limit(10),
-      db
-        .select({ id: editorialCollections.id, state: editorialCollections.state })
-        .from(editorialCollections),
-      db.select({ id: users.id }).from(users),
-      db
-        .select({ id: playbackSessions.id, state: playbackSessions.state })
-        .from(playbackSessions)
-        .where(or(eq(playbackSessions.state, "authorized"), eq(playbackSessions.state, "playing"))),
-    ]);
+  const [
+    eventRows,
+    streamRows,
+    venueRows,
+    auditRows,
+    collectionRows,
+    userRows,
+    playbackRows,
+    rightsRows,
+    mediaControl,
+    competitionRows,
+    mediaAssetRows,
+    productRows,
+  ] = await Promise.all([
+    db
+      .select({
+        id: events.id,
+        titleEt: events.titleEt,
+        titleEn: events.titleEn,
+        state: events.state,
+        scheduledStartAt: events.scheduledStartAt,
+        actualStartAt: events.actualStartAt,
+        endAt: events.endAt,
+        venueId: events.venueId,
+        venueName: venues.name,
+        statusDetailEt: events.statusDetailEt,
+        statusDetailEn: events.statusDetailEn,
+        version: events.version,
+        updatedAt: events.updatedAt,
+      })
+      .from(events)
+      .leftJoin(venues, eq(venues.id, events.venueId))
+      .orderBy(asc(events.scheduledStartAt))
+      .limit(200),
+    db
+      .select({
+        id: streams.id,
+        eventId: streams.eventId,
+        eventTitleEt: events.titleEt,
+        eventTitleEn: events.titleEn,
+        protocol: streams.protocol,
+        state: streams.state,
+        priority: streams.priority,
+        playbackLocator: streams.playbackLocator,
+        externalWatchUrl: streams.externalWatchUrl,
+        provider: streams.provider,
+        providerStreamRef: streams.providerStreamRef,
+        requiresSignedAccess: streams.requiresSignedAccess,
+        dvrWindowSeconds: streams.dvrWindowSeconds,
+        captionsAvailable: streams.captionsAvailable,
+        isDemo: streams.isDemo,
+        lastHealthyAt: streams.lastHealthyAt,
+        updatedAt: streams.updatedAt,
+      })
+      .from(streams)
+      .innerJoin(events, eq(events.id, streams.eventId))
+      .orderBy(asc(streams.priority)),
+    db
+      .select({
+        id: venues.id,
+        name: venues.name,
+        city: venues.city,
+        countryCode: venues.countryCode,
+      })
+      .from(venues)
+      .orderBy(asc(venues.name)),
+    db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        entityType: auditLogs.entityType,
+        occurredAt: auditLogs.occurredAt,
+        reason: auditLogs.reason,
+      })
+      .from(auditLogs)
+      .orderBy(desc(auditLogs.occurredAt))
+      .limit(10),
+    db
+      .select({ id: editorialCollections.id, state: editorialCollections.state })
+      .from(editorialCollections),
+    db.select({ id: users.id }).from(users),
+    db
+      .select({ id: playbackSessions.id, state: playbackSessions.state })
+      .from(playbackSessions)
+      .where(or(eq(playbackSessions.state, "authorized"), eq(playbackSessions.state, "playing"))),
+    listAdminRightsWindows(),
+    listAdminMediaResources(),
+    db
+      .select({
+        id: competitions.id,
+        name: competitions.name,
+        nameEt: competitions.nameEt,
+        nameEn: competitions.nameEn,
+      })
+      .from(competitions)
+      .orderBy(asc(competitions.name)),
+    db
+      .select({
+        id: mediaAssets.id,
+        eventId: mediaAssets.eventId,
+        kind: mediaAssets.kind,
+        titleEt: mediaAssets.titleEt,
+        titleEn: mediaAssets.titleEn,
+      })
+      .from(mediaAssets)
+      .orderBy(asc(mediaAssets.createdAt)),
+    db
+      .select({
+        id: products.id,
+        code: products.code,
+        nameEt: products.nameEt,
+        nameEn: products.nameEn,
+      })
+      .from(products)
+      .where(eq(products.isActive, true))
+      .orderBy(asc(products.nameEn)),
+  ]);
   return {
     events: eventRows.map((row) => ({
       ...row,
@@ -1342,6 +1383,46 @@ export async function getAdminOverview() {
       updatedAt: row.updatedAt.toISOString(),
     })),
     venues: venueRows,
+    rights: rightsRows,
+    rightsTargets: {
+      competitions: competitionRows.map((row) => ({
+        type: "competition" as const,
+        id: row.id,
+        label: { et: row.nameEt ?? row.name, en: row.nameEn ?? row.name },
+        eventId: null,
+      })),
+      events: eventRows.map((row) => ({
+        type: "event" as const,
+        id: row.id,
+        label: { et: row.titleEt, en: row.titleEn },
+        eventId: row.id,
+      })),
+      streams: streamRows.map((row) => ({
+        type: "stream" as const,
+        id: row.id,
+        label: {
+          et: `${row.provider} / ${row.providerStreamRef}`,
+          en: `${row.provider} / ${row.providerStreamRef}`,
+        },
+        eventId: row.eventId,
+      })),
+      mediaAssets: mediaAssetRows.map((row) => ({
+        type: "media_asset" as const,
+        id: row.id,
+        label: {
+          et: row.titleEt ?? row.kind.replaceAll("_", " "),
+          en: row.titleEn ?? row.kind.replaceAll("_", " "),
+        },
+        eventId: row.eventId,
+      })),
+    },
+    products: productRows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      label: { et: row.nameEt, en: row.nameEn },
+    })),
+    mediaResources: mediaControl.resources,
+    mediaOperations: mediaControl.operations,
     audits: auditRows.map((row) => ({ ...row, occurredAt: row.occurredAt.toISOString() })),
     metrics: {
       activeStreams: streamRows.filter((row) => row.state === "live").length,

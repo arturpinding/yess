@@ -29,6 +29,11 @@ import {
   AdminApiError,
   type AdminEvent,
   type AdminEventState,
+  type AdminMediaOperation,
+  type AdminMediaResource,
+  type AdminProduct,
+  type AdminRightsTargetGroups,
+  type AdminRightsWindow,
   type AdminStream,
   type AdminVenue,
   createAdminStream,
@@ -43,6 +48,8 @@ import {
   updateAdminStream,
 } from "./admin-api";
 import { adminEventDraft, changedAdminEventFields, type AdminEventDraft } from "./admin-event-form";
+import { AdminMediaOperationsPanel } from "./admin-media-operations-panel";
+import { AdminRightsPanel } from "./admin-rights-panel";
 import { instantToTallinnInput } from "./admin-tallinn-time";
 import styles from "./admin-control-room.module.css";
 
@@ -53,6 +60,9 @@ const COPY = {
     eventsTitle: "Sündmuste juhtimine",
     eventsHelp: "Muuda avalikku olekut, Eesti aega, pealkirju ja toimumiskohta.",
     addSource: "Lisa varuallikas",
+    addLocalEncoder: "Lisa kohalik enkooder",
+    localEncoderHelp:
+      "Eeltäidab HLS-allika kohaliku sünteetilise FFmpegi teenuse jaoks; pärast loomist juhi seda meediatootmise paneelis.",
     closeAdd: "Sulge lisamine",
     refresh: "Värskenda andmeid",
     refreshing: "Värskendan…",
@@ -136,6 +146,9 @@ const COPY = {
     eventsTitle: "Event control",
     eventsHelp: "Change public status, Estonia time, titles, and venue.",
     addSource: "Add fallback source",
+    addLocalEncoder: "Add local encoder",
+    localEncoderHelp:
+      "Prefills an HLS source for the local synthetic FFmpeg service; after creation, control it in the media-production panel.",
     closeAdd: "Close add form",
     refresh: "Refresh data",
     refreshing: "Refreshing…",
@@ -217,6 +230,13 @@ const COPY = {
 
 type Copy = (typeof COPY)[Locale];
 type Feedback = { kind: "success" | "error"; message: string } | null;
+
+const EMPTY_RIGHTS_TARGETS: AdminRightsTargetGroups = {
+  competitions: [],
+  events: [],
+  streams: [],
+  mediaAssets: [],
+};
 
 const EVENT_STATE_LABELS: Record<Locale, Record<AdminEventState, string>> = {
   et: {
@@ -827,6 +847,24 @@ function CreateStreamForm({
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [busy, setBusy] = useState(false);
 
+  function presetLocalEncoder() {
+    const reference = `local-${eventId.slice(0, 8)}-${Date.now().toString(36)}`;
+    setDraft({
+      protocol: "hls",
+      state: "provisioning",
+      priority: 50,
+      playbackLocator: `http://127.0.0.1:8090/media/${reference}/index.m3u8`,
+      externalWatchUrl: null,
+      provider: "local-ffmpeg",
+      providerStreamRef: reference,
+      requiresSignedAccess: false,
+      dvrWindowSeconds: 0,
+      captionsAvailable: false,
+    });
+    setOpen(true);
+    setFeedback(null);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -855,15 +893,20 @@ function CreateStreamForm({
 
   return (
     <div className={styles.createWrap}>
-      <button
-        className="button primary"
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        {open ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
-        {open ? copy.closeAdd : copy.addSource}
-      </button>
+      <div className={styles.createActions}>
+        <button
+          className="button primary"
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          {open ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
+          {open ? copy.closeAdd : copy.addSource}
+        </button>
+        <button className="button" type="button" onClick={presetLocalEncoder}>
+          <RadioTower size={16} aria-hidden="true" /> {copy.addLocalEncoder}
+        </button>
+      </div>
       {open && (
         <form className={`${styles.editor} ${styles.createForm}`} onSubmit={submit}>
           <div className={styles.formGrid}>
@@ -902,6 +945,7 @@ function CreateStreamForm({
           </div>
         </form>
       )}
+      <p className={styles.rightsHelp}>{copy.localEncoderHelp}</p>
       <p className={styles.rightsHelp}>{copy.rightsHelp}</p>
     </div>
   );
@@ -1181,11 +1225,21 @@ export function AdminControlRoom({
   initialStreams,
   initialEvents,
   venues,
+  initialRights = [],
+  rightsTargets = EMPTY_RIGHTS_TARGETS,
+  products = [],
+  mediaResources = [],
+  mediaOperations = [],
 }: {
   locale: Locale;
   initialStreams: AdminStream[];
   initialEvents: AdminEvent[];
   venues: AdminVenue[];
+  initialRights?: AdminRightsWindow[];
+  rightsTargets?: AdminRightsTargetGroups;
+  products?: AdminProduct[];
+  mediaResources?: AdminMediaResource[];
+  mediaOperations?: AdminMediaOperation[];
 }) {
   const copy = COPY[locale];
   const router = useRouter();
@@ -1254,6 +1308,22 @@ export function AdminControlRoom({
           </div>
         </div>
       </section>
+
+      <AdminMediaOperationsPanel
+        locale={locale}
+        initialStreams={initialStreams}
+        initialResources={mediaResources}
+        initialOperations={mediaOperations}
+        onChanged={refresh}
+      />
+
+      <AdminRightsPanel
+        locale={locale}
+        initialRights={initialRights}
+        rightsTargets={rightsTargets}
+        products={products}
+        onChanged={refresh}
+      />
 
       <section className="panel" aria-labelledby="admin-events-title">
         <header className="panel-header">

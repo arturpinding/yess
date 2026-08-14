@@ -1,9 +1,20 @@
 import type { PlayerSource, PlayerSourceKind } from "@/player/types";
-import type { RightsWindow } from "@/server/rights/resolve-rights";
+import {
+  resolveRights,
+  type RightsResolution,
+  type RightsResolutionContext,
+  type RightsWindow,
+} from "@/server/rights/resolve-rights";
 
 export type DatabaseStreamProtocol = "webrtc" | "ll_hls" | "hls" | "external";
 export type DatabaseStreamState =
   "provisioning" | "ready" | "live" | "degraded" | "ended" | "unavailable";
+
+const PLAYABLE_AUTHORIZATION_STREAM_STATES = new Set<DatabaseStreamState>([
+  "ready",
+  "live",
+  "degraded",
+]);
 
 export interface AuthorizationStream {
   id: string;
@@ -54,6 +65,15 @@ const STREAM_PROTOCOL_ORDER: Record<DatabaseStreamProtocol, number> = {
   external: 3,
 };
 
+/**
+ * Only sources that can currently serve media may receive a playback
+ * authorization. In particular, an ended source is historical metadata, not
+ * an implicit replay source.
+ */
+export function isPlayableAuthorizationStreamState(state: DatabaseStreamState): boolean {
+  return PLAYABLE_AUTHORIZATION_STREAM_STATES.has(state);
+}
+
 export function playerSourceKind(protocol: DatabaseStreamProtocol): PlayerSourceKind {
   switch (protocol) {
     case "webrtc":
@@ -84,18 +104,22 @@ export function orderAuthorizationStreams(
 export function mapDatabaseRightsWindow(
   row: DatabaseRightsWindow,
   eventId: string,
-  eventCompetitionId: string,
   streams: readonly AuthorizationStream[],
   policyVersion: number,
+  candidateStreamId?: string,
 ): RightsWindow {
   const orderedStreams = orderAuthorizationStreams(streams);
   const selectedStream = row.streamId
     ? orderedStreams.find((stream) => stream.id === row.streamId)
-    : orderedStreams[0];
+    : candidateStreamId
+      ? orderedStreams.find((stream) => stream.id === candidateStreamId)
+      : orderedStreams[0];
 
-  const scope = row.competitionId
-    ? ({ kind: "competition", competitionId: row.competitionId } as const)
-    : ({ kind: "event", eventId } as const);
+  const scope: RightsWindow["scope"] = row.streamId
+    ? { kind: "stream", streamId: row.streamId }
+    : row.competitionId
+      ? { kind: "competition", competitionId: row.competitionId }
+      : { kind: "event", eventId: row.eventId ?? eventId };
 
   let delivery: RightsWindow["delivery"] = { kind: "none" };
   if (row.access === "external_only" && row.externalWatchUrl) {
@@ -112,7 +136,7 @@ export function mapDatabaseRightsWindow(
 
   return {
     id: row.id,
-    scope: row.competitionId === eventCompetitionId ? scope : { kind: "event", eventId },
+    scope,
     effect: row.access === "unavailable" ? "deny" : "allow",
     territory: row.countryCode
       ? { mode: "include", countryCodes: [row.countryCode] }
@@ -127,6 +151,86 @@ export function mapDatabaseRightsWindow(
     delivery,
     policyVersion,
   };
+}
+
+export type PlaybackRightsResolution =
+  | (Extract<RightsResolution, { allowed: true }> & {
+      /** The candidate whose transport should be authorized; null for source-independent delivery. */
+      stream: AuthorizationStream | null;
+    })
+  | Extract<RightsResolution, { allowed: false }>;
+
+function isUsablePlaybackCandidate(stream: AuthorizationStream): boolean {
+  if (!isPlayableAuthorizationStreamState(stream.state)) return false;
+  return stream.protocol === "external"
+    ? stream.externalWatchUrl !== null
+    : stream.playbackLocator !== null;
+}
+
+/**
+ * Resolves policy against each usable source in deterministic playback order.
+ * A source-specific denial does not suppress a lawful fallback source, while
+ * event and competition policies are re-applied to every candidate.
+ */
+export function resolvePlaybackRights(
+  rows: readonly DatabaseRightsWindow[],
+  streams: readonly AuthorizationStream[],
+  context: RightsResolutionContext,
+  policyVersion: number,
+): PlaybackRightsResolution {
+  const orderedStreams = orderAuthorizationStreams(streams);
+  const candidates = orderedStreams.filter(isUsablePlaybackCandidate);
+
+  let firstDenial: Extract<RightsResolution, { allowed: false }> | undefined;
+  for (const stream of candidates) {
+    const resolution = resolveRights(
+      rows.map((row) =>
+        mapDatabaseRightsWindow(row, context.eventId, streams, policyVersion, stream.id),
+      ),
+      { ...context, streamId: stream.id },
+    );
+    if (resolution.allowed) {
+      if (resolution.delivery.kind !== "internal" || resolution.delivery.streamId === stream.id) {
+        return { ...resolution, stream };
+      }
+      continue;
+    }
+    firstDenial ??= resolution;
+  }
+
+  // An explicit partner destination remains useful when its associated
+  // internal transport has ended. This never revives that ended transport:
+  // only the rights row's own external-only destination is accepted here.
+  for (const stream of orderedStreams.filter(
+    (candidate) => !isUsablePlaybackCandidate(candidate),
+  )) {
+    const resolution = resolveRights(
+      rows.map((row) =>
+        mapDatabaseRightsWindow(row, context.eventId, streams, policyVersion, stream.id),
+      ),
+      { ...context, streamId: stream.id },
+    );
+    const winningRow = resolution.allowed
+      ? rows.find((row) => row.id === resolution.window.id)
+      : undefined;
+    if (
+      resolution.allowed &&
+      resolution.delivery.kind === "external" &&
+      winningRow?.access === "external_only"
+    ) {
+      return { ...resolution, stream: null };
+    }
+  }
+
+  if (candidates.length === 0) {
+    const resolution = resolveRights(
+      rows.map((row) => mapDatabaseRightsWindow(row, context.eventId, [], policyVersion)),
+      context,
+    );
+    return resolution.allowed ? { ...resolution, stream: null } : resolution;
+  }
+
+  return firstDenial ?? { allowed: false, reason: "no-rights" };
 }
 
 export function appendPlaybackToken(locator: string, token: string, origin: string): string {

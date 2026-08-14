@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "media_provider_operations_one_pending_per_stream" ON "media_provider_operations" USING btree ("stream_id") WHERE "media_provider_operations"."state" = 'pending';

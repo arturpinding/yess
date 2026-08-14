@@ -33,6 +33,11 @@ const environmentSchema = z
     PAYMENT_PROVIDER: optionalNonEmptyString,
     PUSH_PROVIDER: optionalNonEmptyString,
     EMAIL_PROVIDER: optionalNonEmptyString,
+    MEDIA_PROVIDER_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+    MEDIA_PROVIDER_TOKEN: z.preprocess(
+      emptyToUndefined,
+      z.string().min(32, "MEDIA_PROVIDER_TOKEN must contain at least 32 characters").optional(),
+    ),
   })
   .superRefine((environment, context) => {
     if (environment.SESSION_SECRET === environment.MEDIA_SIGNING_SECRET) {
@@ -64,6 +69,25 @@ const environmentSchema = z
           });
         }
       }
+
+      if (
+        environment.MEDIA_PROVIDER_URL &&
+        !environment.MEDIA_PROVIDER_URL.startsWith("https://")
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["MEDIA_PROVIDER_URL"],
+          message: "MEDIA_PROVIDER_URL must use HTTPS in production",
+        });
+      }
+    }
+
+    if (Boolean(environment.MEDIA_PROVIDER_URL) !== Boolean(environment.MEDIA_PROVIDER_TOKEN)) {
+      context.addIssue({
+        code: "custom",
+        path: [environment.MEDIA_PROVIDER_URL ? "MEDIA_PROVIDER_TOKEN" : "MEDIA_PROVIDER_URL"],
+        message: "MEDIA_PROVIDER_URL and MEDIA_PROVIDER_TOKEN must be configured together",
+      });
     }
   });
 

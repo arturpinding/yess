@@ -42,7 +42,7 @@ A helper existing in the repository does not secure an endpoint by itself. Every
 ## Required production controls and known gaps
 
 - Replace demo session bootstrap with a contracted identity flow: verified contact point, secure password hashing or OIDC, account recovery, credential-stuffing protection, MFA for privileged roles, and session/device revocation.
-- Keep the production hard 404 for both the development admin page and its event/source APIs until staff SSO, MFA, route-level/object-level RBAC, attributable tamper-evident audit and provider controls are deployed and tested.
+- Keep the production hard 404 for the development admin page and all event/source/rights/provider APIs until staff SSO, MFA, route-level/object-level RBAC, attributable tamper-evident audit and contracted provider controls are deployed and tested.
 - Keep session state server-side. On every sensitive request, verify the session row is active, not expired/revoked, belongs to the account, and has the current rotation/version. Rotate after login, privilege change and recovery.
 - Keep the role vocabulary aligned across database, token claims and route guards. Test viewer/editor/operator/admin allow and deny cases at the object level as privileged routes are added.
 - Replace process-local rate limits, idempotency and concurrency counts with atomic shared storage. A multi-replica deployment must not admit one limit per pod.
@@ -57,7 +57,7 @@ A helper existing in the repository does not secure an endpoint by itself. Every
 
 ### Authentication and cookies
 
-The development control room is an explicit exception to the production authentication model: it has no login, staff session or role check. Its page and APIs exist only outside production; same-origin CSRF, validation, rate limiting and audit reduce accidental local misuse but do not authenticate an operator. Do not expose the development server to an untrusted network or treat a CSRF token as a credential.
+The development control room is an explicit exception to the production authentication model: it has no login, staff session or role check. Its page and APIs exist only outside production; same-origin CSRF, validation, rate limiting, provider-operation idempotency and audit reduce accidental local misuse but do not authenticate an operator. The supplied FFmpeg provider is also a development service and binds to loopback by default. Do not expose either service to an untrusted network or treat a CSRF token as a credential.
 
 - Production cookie: `__Host-` prefix, `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain` attribute.
 - Use short privileged sessions and step-up authentication for roles, rights, refunds, stream controls and personal-data export/deletion.
@@ -89,7 +89,7 @@ Bearer-authenticated backend API calls are outside browser ambient-cookie CSRF, 
 
 ### SSRF and media parsing
 
-- Schedule and media providers are configuration, not request parameters. Resolve allow-listed hostnames, block private/link-local/metadata destinations, pin protocol/port rules, limit redirects/response size/time and use a controlled egress proxy.
+- Schedule and media providers are configuration, not request parameters. The implemented registry accepts only `local-ffmpeg`; its development adapter permits only loopback HTTP, supplies the bearer token server-side, rejects redirects, applies a timeout and caps response bytes. A production registry must require HTTPS, resolve approved hostnames, block private/link-local/metadata destinations, pin protocol/port rules and use controlled egress where appropriate.
 - Fetch external assets asynchronously in a sandboxed media worker. Check actual bytes, dimensions/duration, decompression ratio and antivirus policy; randomize storage keys.
 - Browser playback may navigate to an official external HTTPS link. The server must not probe that arbitrary link on behalf of the user.
 
@@ -124,7 +124,7 @@ Protect major events from synchronized retries with bounded queues, jitter, circ
 - Origin permits only packager/CDN identities. Ingest publishing credentials are event-specific and rotated.
 - DRM is required when the contract calls for it; signed URLs alone do not encrypt media.
 - Logs and telemetry remove query signatures, authorization headers, cookies, DRM challenges/licenses and raw IPs.
-- Production takedown must stop new authorization and media delivery by event/territory/content type without deploying code, with every emergency action audited. The repository has rights/audit foundations but no operating takedown console.
+- The local control room implements an audited access-only emergency update to `unavailable`, which clears technical grants and stops later local authorization under that policy. It can also unpublish the supplied local manifest. This is a development takedown path, not legal notice or production CDN revocation. Production must stop both new authorization and contracted media delivery by event/territory/content type without deploying code, and must preserve attributable, tamper-evident audit evidence.
 
 ## Privacy and GDPR foundation
 
