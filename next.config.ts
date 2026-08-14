@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
 
+import { validatePhoneDemoHost } from "./src/dev/phone-demo-config";
+
 const isDevelopment = process.env.NODE_ENV !== "production";
 const localMediaSources = isDevelopment ? " http://127.0.0.1:8090 http://localhost:8090" : "";
+const phoneDemoHost =
+  isDevelopment && process.env.PHONE_DEMO_HOST?.trim()
+    ? validatePhoneDemoHost(process.env.PHONE_DEMO_HOST)
+    : undefined;
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -19,7 +25,7 @@ const contentSecurityPolicy = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  allowedDevOrigins: phoneDemoHost ? [phoneDemoHost] : [],
   poweredByHeader: false,
   reactStrictMode: true,
   experimental: {
@@ -49,6 +55,19 @@ const nextConfig: NextConfig = {
             : []),
         ],
       },
+      ...(isDevelopment
+        ? [
+            {
+              source: "/:locale(et|en)/broadcast",
+              headers: [
+                {
+                  key: "Permissions-Policy",
+                  value: "camera=(self), microphone=(self), geolocation=(), payment=(), usb=()",
+                },
+              ],
+            },
+          ]
+        : []),
     ];
   },
 };

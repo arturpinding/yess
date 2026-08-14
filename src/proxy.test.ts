@@ -6,14 +6,26 @@ describe("locale and production route proxy", () => {
     vi.unstubAllEnvs();
   });
 
-  it("blocks the demo control room at the request boundary in production", async () => {
+  it.each(["/en/admin", "/et/broadcast", "/en/broadcast/watch"])(
+    "hard-404s the development-only route %s at the production request boundary",
+    async (path) => {
+      vi.stubEnv("NODE_ENV", "production");
+
+      const response = proxy(new NextRequest(`https://rada.invalid${path}`));
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store, max-age=0");
+      await expect(response.text()).resolves.toBe("Not found");
+    },
+  );
+
+  it("does not hide similarly named public routes in production", () => {
     vi.stubEnv("NODE_ENV", "production");
 
-    const response = proxy(new NextRequest("https://rada.invalid/en/admin"));
+    const response = proxy(new NextRequest("https://rada.invalid/en/broadcasting"));
 
-    expect(response.status).toBe(404);
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store, max-age=0");
-    await expect(response.text()).resolves.toBe("Not found");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
   it("keeps localized public routes available outside production", () => {

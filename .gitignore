@@ -34,6 +34,7 @@ npm-debug.log*
 # Generated demo media (source scripts and manifests stay tracked)
 public/demo-media/generated/
 .local-media/
+.local-certificates/
 
 # Local scratch
 tmp.txt

@@ -112,6 +112,85 @@ const document = {
         responses: { "200": { description: "iCalendar" } },
       },
     },
+    "/api/v1/demo-broadcasts": {
+      post: {
+        summary: "Create a short-lived direct-device demo broadcast",
+        description:
+          "Development only. Creates a 30-minute WebRTC signaling room; camera media travels directly between browsers and is not uploaded here.",
+        responses: {
+          "201": { description: "Room code and publisher bearer credential created" },
+          "403": { description: "Same-origin CSRF proof required" },
+          "404": { description: "Disabled in production" },
+          "429": { description: "Rate limited" },
+        },
+      },
+    },
+    "/api/v1/demo-broadcasts/{code}/offer": {
+      post: {
+        summary: "Store the publisher WebRTC offer",
+        description: "Development only. Requires the publisher bearer credential.",
+        parameters: [
+          {
+            name: "code",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              pattern: "^[0-9A-HJ-KM-NP-TV-Z]{4}-?[0-9A-HJ-KM-NP-TV-Z]{4}$",
+            },
+          },
+        ],
+        responses: {
+          "200": { description: "Offer accepted idempotently" },
+          "401": { description: "Invalid publisher credential" },
+          "404": { description: "Room not found or feature disabled" },
+          "409": { description: "A different offer already exists" },
+        },
+      },
+    },
+    "/api/v1/demo-broadcasts/{code}/viewer": {
+      post: {
+        summary: "Claim the single viewer slot and retrieve the offer",
+        description: "Development only. Requires same-origin CSRF proof.",
+        responses: {
+          "201": { description: "Viewer credential and publisher offer returned" },
+          "403": { description: "Same-origin CSRF proof required" },
+          "409": { description: "Offer is not ready or viewer slot is already claimed" },
+          "410": { description: "Room expired" },
+        },
+      },
+    },
+    "/api/v1/demo-broadcasts/{code}/answer": {
+      post: {
+        summary: "Store the viewer WebRTC answer",
+        description: "Development only. Requires the viewer bearer credential.",
+        responses: {
+          "200": { description: "Answer accepted idempotently" },
+          "401": { description: "Invalid viewer credential" },
+          "409": { description: "A different answer already exists" },
+        },
+      },
+      get: {
+        summary: "Poll for the viewer WebRTC answer",
+        description: "Development only. Requires the publisher bearer credential.",
+        responses: {
+          "200": { description: "Current answer and room state returned with no-store caching" },
+          "401": { description: "Invalid publisher credential" },
+          "410": { description: "Room expired" },
+        },
+      },
+    },
+    "/api/v1/demo-broadcasts/{code}": {
+      delete: {
+        summary: "End and delete a direct-device demo broadcast",
+        description: "Development only. Requires the publisher bearer credential.",
+        responses: {
+          "200": { description: "Room and retained signaling data deleted" },
+          "401": { description: "Invalid publisher credential" },
+          "404": { description: "Room not found or feature disabled" },
+        },
+      },
+    },
     "/api/v1/admin/events/{eventId}": {
       patch: {
         summary: "Correct event metadata and lifecycle state",

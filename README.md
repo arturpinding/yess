@@ -13,9 +13,10 @@ The repository currently contains:
 - repeatable fictional seed data across biathlon, basketball, athletics, rowing, volleyball and football, including Estonian athletes at foreign demo clubs, eight self-hosted synthetic athlete portraits, every event status and explicit demo rights states;
 - session-owned server-rendered personalization with a guaranteed-empty anonymous scope, plus framework-independent rules for event transitions, Tallinn day boundaries/DST, spoiler redaction, rights resolution, entitlement expiry, session/playback tokens, CSRF and rate limiting;
 - a PostgreSQL-backed in-app planner and worker for starting-soon, started and followed-athlete notices, with a global Settings control, athlete/team controls, scoped-over-global preference precedence and database-enforced idempotency;
-- a player abstraction that can select WHEP/WebRTC, LL-HLS, HLS or an official external destination, with ABR/manual quality, data saver, recovery/fallback, live edge, rights-controlled DVR, captions/audio controls, PiP, fullscreen, keyboard controls and privacy-conscious telemetry hooks; and
+- a player abstraction that can select WHEP/WebRTC, LL-HLS, HLS or an official external destination, with ABR/manual quality, data saver, recovery/fallback, live edge, rights-controlled DVR, captions/audio controls, PiP, fullscreen, keyboard controls and privacy-conscious telemetry hooks;
 - a development-only control room with real PostgreSQL mutations for event metadata, playback sources and technical rights policies, including guarded emergency unavailability and deletion, reasons, before/after audit records, optimistic concurrency, confirmations, CSRF and local rate limits;
-- a loopback-only development media-provider service that starts FFmpeg over generated test video/audio, produces and serves an HLS playlist, and supports provision/start/publish/unpublish/stop/refresh through durable idempotent provider operations; and
+- a loopback-only development media-provider service that starts FFmpeg over generated test video/audio, produces and serves an HLS playlist, and supports provision/start/publish/unpublish/stop/refresh through durable idempotent provider operations;
+- a development-only, one-viewer phone-camera demo that exchanges ephemeral WebRTC setup data through RADA while video and audio travel directly between two browsers on the same trusted LAN; and
 - structured/redacted logs, liveness/readiness conventions, container build, CI, coverage thresholds, Playwright mobile/desktop projects and production design/runbooks.
 
 The user-facing page/API inventory is documented in [docs/api.md](docs/api.md). The local media controls call only the repository's synthetic FFmpeg service; they do not call a real broadcaster, CDN, payment or notification provider.
@@ -78,6 +79,7 @@ Prerequisites:
 - npm 10 or newer
 - Docker Engine with Compose (for PostgreSQL)
 - FFmpeg on `PATH` to exercise the local synthetic media-provider lifecycle
+- OpenSSL on `PATH` to run the HTTPS phone-camera demo
 
 From the repository root:
 
@@ -105,6 +107,29 @@ It listens on `127.0.0.1:8090` by default, accepts the matching development bear
 Open <http://localhost:3000>. The root redirects to Estonian; use the visible `EN`/`ET` switcher or open <http://localhost:3000/en>.
 
 A fresh browser's first server render is anonymous and receives an intentionally empty personalization scope. In development only, the hydrated client calls the CSRF-protected demo-session endpoint, receives an HttpOnly cookie and refreshes into the seeded profile owned by that session. Later server renders resolve that cookie and profile in PostgreSQL. If bootstrap is unavailable, public browsing remains anonymous; there are no real credentials. Production hard-disables the demo-session endpoint.
+
+### Phone camera to computer demo
+
+This is a separate development path from the admin-controlled synthetic FFmpeg/HLS provider. It does not use port 8090, create an event stream in the catalogue, pass through FFmpeg, or record media on the server.
+
+After the normal database setup, run this **instead of** `npm run dev`:
+
+```bash
+npm run dev:phone
+```
+
+The launcher selects an active private IPv4 address, creates or reuses a short-lived host-matched development CA/certificate, starts Next.js with HTTPS on `0.0.0.0:3000`, and prints three exact URLs. On a trusted Wi-Fi network:
+
+1. On Android, open the printed HTTP CA URL, compare its SHA-256 fingerprint with the terminal output where the installer exposes it, and install it as a **CA certificate**. Android warns that network traffic may be monitored; this is expected for a locally trusted development CA.
+2. On the computer, download the same public CA and compare the fingerprint. For a disposable demo browser/profile, either import that CA into the browser/OS trust store or explicitly accept the certificate warning for this exact LAN-IP origin if the browser permits it. Do not install an unverified CA or accept a warning on an untrusted network.
+3. On the phone, open the printed `https://LAN-IP:3000/et/broadcast` URL. Choose rear/front camera, press **Allow camera and start**, then grant camera and microphone permission.
+4. The phone shows an eight-character code such as `ABCD-EFGH` and a viewer link. On the computer, use that exact same `https://LAN-IP:3000` origin—not `localhost`—and open the viewer link, or enter the code at `/et/broadcast/watch`.
+5. The phone progresses through Waiting, Connecting and Live. One viewer can join; the phone can mute its microphone or stop, and the viewer can leave.
+6. After the demo, stop the launcher. Remove **RADA Phone Demo CA** from Android and from the computer/browser if you imported it; also remove any saved browser exception.
+
+TCP ports 3000 and 3080 must be reachable from the phone. Guest Wi-Fi/client isolation, a VPN, host firewall rules or different networks can prevent HTTPS, signaling or direct WebRTC host-candidate connectivity. There is deliberately no STUN or TURN relay, so this demo is not expected to cross NATs. See [the detailed Android, firewall, certificate and USB workflow](docs/deployment.md#phone-camera-lan-demo).
+
+The server-returned expiry is 30 minutes. At expiry the phone stops its camera/microphone and peer connection and attempts to delete the signaling row. Stop, navigation and browser shutdown also attempt deletion, but shutdown delivery is inherently best-effort. If deletion does not arrive, the expired row is denied immediately and is purged by the next development signaling request; there is no independent periodic cleanup job. Until that later request, bounded offer/answer SDP—including peer host candidates—can remain in the local PostgreSQL database.
 
 ### Development control room
 
@@ -141,23 +166,25 @@ npm run db:setup
 
 ## Commands
 
-| Command                        | Purpose                                                              |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `npm run dev`                  | development server                                                   |
-| `npm run build`                | optimized standalone production build                                |
-| `npm start`                    | run the built server                                                 |
-| `npm run db:migrate`           | apply checked-in Drizzle migrations                                  |
-| `npm run db:seed`              | upsert fictional/local demo records                                  |
-| `npm run db:setup`             | migrate then seed                                                    |
-| `npm run worker:notifications` | plan and deliver in-app rows in a separate local worker              |
-| `npm run format`               | write Prettier formatting                                            |
-| `npm run format:check`         | verify formatting without changes                                    |
-| `npm run lint`                 | ESLint with zero warnings allowed                                    |
-| `npm run typecheck`            | TypeScript without emitting files                                    |
-| `npm test`                     | Vitest unit/integration suite                                        |
-| `npm run test:coverage`        | tests plus enforced coverage thresholds                              |
-| `npm run test:e2e`             | Playwright mobile + desktop Chromium projects                        |
-| `npm run verify`               | formatting, lint, types, unit tests and build (does not include E2E) |
+| Command                        | Purpose                                                               |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `npm run dev`                  | development server                                                    |
+| `npm run dev:phone`            | trusted-LAN HTTPS server plus public development-CA download endpoint |
+| `npm run media:provider`       | loopback synthetic FFmpeg/HLS provider for admin media controls       |
+| `npm run build`                | optimized standalone production build                                 |
+| `npm start`                    | run the built server                                                  |
+| `npm run db:migrate`           | apply checked-in Drizzle migrations                                   |
+| `npm run db:seed`              | upsert fictional/local demo records                                   |
+| `npm run db:setup`             | migrate then seed                                                     |
+| `npm run worker:notifications` | plan and deliver in-app rows in a separate local worker               |
+| `npm run format`               | write Prettier formatting                                             |
+| `npm run format:check`         | verify formatting without changes                                     |
+| `npm run lint`                 | ESLint with zero warnings allowed                                     |
+| `npm run typecheck`            | TypeScript without emitting files                                     |
+| `npm test`                     | Vitest unit/integration suite                                         |
+| `npm run test:coverage`        | tests plus enforced coverage thresholds                               |
+| `npm run test:e2e`             | Playwright mobile + desktop Chromium projects                         |
+| `npm run verify`               | formatting, lint, types, unit tests and build (does not include E2E)  |
 
 Install the Playwright browser once before a first local E2E run:
 
@@ -190,14 +217,16 @@ Recorded on **2026-08-14** against the final documented tree. A passing build or
 | Formatting                           | `npm run format:check`                       | Pass                                                                                                                                                    |
 | Lint                                 | `npm run lint`                               | Pass, zero warnings                                                                                                                                     |
 | Static types                         | `npm run typecheck`                          | Pass                                                                                                                                                    |
-| Unit/integration                     | `npm test`                                   | Pass; 42 files, 173 tests                                                                                                                               |
-| Coverage gate                        | `npm run test:coverage`                      | Pass; statements 73.29%, branches 65.83%, functions 77.39%, lines 75.4%; all 173 tests pass                                                             |
-| Migration + repeat seed              | local PostgreSQL 17                          | Pass; 35 application tables, no migration/schema drift detected, repeat seed completed                                                                  |
+| Unit/integration                     | `npm test`                                   | Pass; 50 files, 223 tests                                                                                                                               |
+| Coverage gate                        | `npm run test:coverage`                      | Pass; statements 76.09%, branches 67.98%, functions 78.26%, lines 79.12%; all 223 tests pass                                                            |
+| Migration + repeat seed              | local PostgreSQL 17                          | Pass; 36 application tables, no migration/schema drift detected, migrations reapplied and repeat seed completed                                         |
 | In-app planning/delivery idempotency | isolated PostgreSQL planner/worker cycles    | First cycle inserted 5 and delivered 2 due rows; identical retry inserted 0 and delivered 0. This is a functional check, not delivery-latency evidence  |
-| Native production build              | `npm run build`                              | Pass; all 26 application/API routes generated, including the rights and media-operation admin routes                                                    |
-| Container image                      | Docker build and image/filesystem inspection | Pass; 83,492,422 bytes, runtime user `nextjs`, and no `.env`, `.local-media`, Playwright or test-result artifacts found                                 |
-| Runtime health and production guard  | final container on local port 3100           | Pass; liveness 200, readiness/database 200, English home 200, and production admin 404                                                                  |
-| Desktop/mobile browser flow          | Playwright Desktop Chrome + Pixel 7          | 17 passed, 5 intentional duplicate-mobile mutation skips in 3.2 min; axe, spoiler, player, follows, notifications and admin mutations included          |
+| Native production build              | `npm run build`                              | Pass; all 36 application/API routes generated, including the direct-device signaling and admin routes                                                   |
+| Container image                      | Docker build and image/filesystem inspection | Pass; 83,590,236 bytes, runtime user `nextjs`, and no `.env`, local certificates/media, Playwright or test-result artifacts found                       |
+| Runtime health and production guard  | final container on local port 3100           | Pass; liveness 200, readiness/database 200, English home 200; production admin, broadcaster, viewer and signaling API all returned 404                  |
+| Desktop/mobile browser flow          | Playwright Desktop Chrome + Pixel 7          | 18 passed, 6 intentional duplicate-mobile mutation skips in 2.7 min; axe, spoiler, player, follows, notifications, admin and direct WebRTC included     |
+| Direct phone-camera flow             | Pixel 7 emulation → separate desktop context | Pass in 15.8 s; real `getUserMedia`, WebRTC negotiation, nonzero decoded video and a live track; Stop deleted the room and the code then returned 404   |
+| Secure LAN signaling                 | `dev:phone` + trusted-CA HTTPS probe         | Pass; create 201, offer 200, viewer 201, answer 200, connected poll 200, delete 200, repeat viewer claim 404; zero retained signaling rows afterward    |
 | Local FFmpeg/HLS lifecycle           | desktop Playwright admin scenario            | Pass in 27.7 s; provision/start/publish produced a fetchable `#EXTM3U` manifest, unpublish returned 404, stop ended it, and cleanup left zero resources |
 | Responsive/accessibility automation  | Pixel 7/Desktop Chromium + axe               | Pass; no horizontal overflow and no tagged WCAG 2.2 A/AA axe violations in the checked admin/home dark/light views; not a conformance audit             |
 
@@ -205,19 +234,19 @@ The V8 unit-coverage gate excludes database schema declarations plus the Postgre
 
 ### Performance and latency: targets versus measurements
 
-| Metric                      | Design target                                                      | Measured in this repository                                    |
-| --------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
-| WebRTC glass-to-glass       | p75 under 2 s where infrastructure permits                         | Not measured; no WebRTC media service/venue ingest             |
-| LL-HLS glass-to-glass       | p75 approximately 2–5 s                                            | Not measured; no production LL-HLS pipeline                    |
-| Standard HLS glass-to-glass | p75 approximately 6–15 s                                           | Not measured; public test asset has no controlled ingest clock |
-| Authorized playback startup | p75 <2.5 s and p95 <5 s on defined Estonia network profiles        | Not measured; requires RUM plus device/network test matrix     |
-| Rebuffer ratio              | p75 <0.5%, p95 <2%                                                 | Not measured                                                   |
-| Video start success         | >=99.5% of authorized attempts                                     | Not measured                                                   |
-| Player recovery             | p95 <8 s when a healthy authorized fallback exists                 | Not measured end to end                                        |
-| Public/API availability     | 99.95% initial objective                                           | Not measured; no production observation window                 |
-| Notification delay          | p95 <60 s in-app, <120 s to push/email provider                    | Not measured; external providers absent                        |
-| Core Web Vitals             | p75 LCP <=2.5 s, INP <=200 ms, CLS <=0.1 on defined mobile profile | Not measured; needs deployed lab/RUM evidence                  |
-| Initial non-player JS       | <=180 KiB gzip per primary route; player code only on event view   | Not measured; add a CI bundle budget before launch             |
+| Metric                      | Design target                                                      | Measured in this repository                                                                                           |
+| --------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| WebRTC glass-to-glass       | p75 under 2 s where infrastructure permits                         | Not measured; direct demo decode passed, but it has no synchronized capture/display clock or production media service |
+| LL-HLS glass-to-glass       | p75 approximately 2–5 s                                            | Not measured; no production LL-HLS pipeline                                                                           |
+| Standard HLS glass-to-glass | p75 approximately 6–15 s                                           | Not measured; public test asset has no controlled ingest clock                                                        |
+| Authorized playback startup | p75 <2.5 s and p95 <5 s on defined Estonia network profiles        | Not measured; requires RUM plus device/network test matrix                                                            |
+| Rebuffer ratio              | p75 <0.5%, p95 <2%                                                 | Not measured                                                                                                          |
+| Video start success         | >=99.5% of authorized attempts                                     | Not measured                                                                                                          |
+| Player recovery             | p95 <8 s when a healthy authorized fallback exists                 | Not measured end to end                                                                                               |
+| Public/API availability     | 99.95% initial objective                                           | Not measured; no production observation window                                                                        |
+| Notification delay          | p95 <60 s in-app, <120 s to push/email provider                    | Not measured; external providers absent                                                                               |
+| Core Web Vitals             | p75 LCP <=2.5 s, INP <=200 ms, CLS <=0.1 on defined mobile profile | Not measured; needs deployed lab/RUM evidence                                                                         |
+| Initial non-player JS       | <=180 KiB gzip per primary route; player code only on event view   | Not measured; add a CI bundle budget before launch                                                                    |
 
 The player health panel's distance from the live edge is an estimate from the media timeline. It must never be reported as glass-to-glass latency. The production test method is documented in [media-pipeline.md](docs/media-pipeline.md#10-test-programme).
 
@@ -251,6 +280,7 @@ The development admin page and mutation APIs are hard-404ed in production. They 
 - This is a web demo with anonymous SSR plus one development-only, session-owned seeded profile, not completed registration/login/recovery or multi-device profile synchronization.
 - Seed schedules use relative times at first insertion and are not connected to an authoritative live provider.
 - WebRTC and LL-HLS are player/interface capabilities; local seed and generated playback are standard HLS and do not exercise real protocol failover.
+- The phone-camera demo is a separate one-viewer, same-LAN browser WebRTC path with host candidates only. It is not event ingest, a CDN/player source, recording, transcoding, multi-viewer distribution or a production broadcasting service.
 - HLS playback is unsigned in local development. There is no media-edge token verifier, geo-IP, DRM/license server or shared concurrency lease.
 - Payments, plans and entitlements have data/policy foundations but no money movement or provider webhook.
 - The PostgreSQL planner/worker implements starting-soon, started and followed-athlete in-app notices with scoped/global preference precedence and idempotent inserts. Schedule/venue-change and result/highlight rules exist but are not connected to an authoritative feed trigger; push/email delivery is absent.

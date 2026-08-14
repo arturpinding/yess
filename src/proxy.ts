@@ -4,7 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 export function proxy(request: NextRequest) {
   if (
     process.env.NODE_ENV === "production" &&
-    /^\/(?:et|en)\/admin(?:\/|$)/.test(request.nextUrl.pathname)
+    /^\/(?:et|en)\/(?:admin|broadcast)(?:\/|$)/.test(request.nextUrl.pathname)
   ) {
     return new NextResponse("Not found", {
       status: 404,

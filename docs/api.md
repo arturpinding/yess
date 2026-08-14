@@ -304,6 +304,98 @@ Cache-Control: private, no-store, max-age=0
 
 This is an authenticated snapshot download, not a long-lived secret subscription URL. Rate limit: 30/minute/profile session.
 
+### Development-only phone broadcast signaling
+
+These routes coordinate one direct browser-to-browser WebRTC connection. They store bounded SDP setup messages temporarily in PostgreSQL; audio/video does not pass through these routes and is not recorded by RADA. All routes return private/no-store responses and hard-404 before parsing, rate limiting or data access when `NODE_ENV=production`.
+
+A session authorizes signaling only until its server-returned expiry, currently 30 minutes. The phone arms its lifecycle from that value rather than a client hard-coded duration. Its human-entered Crockford Base32 code has eight symbols/40 bits and is displayed as `ABCD-EFGH`; case, hyphens/whitespace and the `O/I/L` aliases are normalized. The code locates a session but is not a publisher/viewer credential. Each 256-bit URL-safe bearer token is returned only to its role, kept out of URLs and persistent browser storage, and stored in PostgreSQL only as a SHA-256 digest.
+
+#### `POST /api/v1/demo-broadcasts`
+
+Creates the phone's temporary session. Requires exact-Origin/double-submit CSRF. Body is strict and at most 1 KiB:
+
+```json
+{ "locale": "et" }
+```
+
+Created response — `201`:
+
+```json
+{
+  "data": {
+    "code": "ABCD-EFGH",
+    "publisherToken": "<returned-once bearer credential>",
+    "expiresAt": "2026-08-14T16:30:00.000Z"
+  }
+}
+```
+
+#### `POST /api/v1/demo-broadcasts/{code}/offer`
+
+Stores the phone's complete non-trickle ICE offer. Requires `Authorization: Bearer <publisherToken>`; the bearer credential replaces ambient-cookie authorization for this route.
+
+```json
+{ "type": "offer", "sdp": "v=0\r\n..." }
+```
+
+SDP must start with `v=0`, contain no NUL byte and be at most 128 KiB. Repeating an identical offer is idempotent; replacing it returns `409 offer_conflict`.
+
+#### `POST /api/v1/demo-broadcasts/{code}/viewer`
+
+Atomically claims the single viewer and returns the offer plus a new viewer-only token. Requires exact-Origin/double-submit CSRF and an exactly empty object body:
+
+```json
+{}
+```
+
+Created response — `201`:
+
+```json
+{
+  "data": {
+    "viewerToken": "<returned-once bearer credential>",
+    "offer": { "type": "offer", "sdp": "v=0\r\n..." },
+    "expiresAt": "2026-08-14T16:30:00.000Z"
+  }
+}
+```
+
+Claim before the offer returns `409 offer_not_ready`; a second claim returns `409 viewer_already_claimed`.
+
+#### `POST /api/v1/demo-broadcasts/{code}/answer`
+
+Stores the viewer's complete answer. Requires `Authorization: Bearer <viewerToken>` and the same SDP bounds:
+
+```json
+{ "type": "answer", "sdp": "v=0\r\n..." }
+```
+
+Repeating the identical answer is idempotent; replacement returns `409 answer_conflict`.
+
+#### `GET /api/v1/demo-broadcasts/{code}/answer`
+
+Allows only the publisher bearer token to poll for the answer. Before the viewer answers, `answer` is null:
+
+```json
+{
+  "data": {
+    "answer": null,
+    "state": "offer_ready",
+    "expiresAt": "2026-08-14T16:30:00.000Z"
+  }
+}
+```
+
+#### `DELETE /api/v1/demo-broadcasts/{code}`
+
+Allows only the publisher bearer token to stop and remove the temporary signaling session. Success is `200 { "data": { "deleted": true } }`.
+
+Missing/invalid authorization is `401`; unknown codes are `404`; an exact access to an expired row deletes it and returns `410 broadcast_expired`. The phone stops local media/peer resources at the returned expiry and makes a best-effort delete; explicit Stop, navigation and browser shutdown also attempt deletion, but page shutdown cannot guarantee request delivery. If deletion does not arrive, any later development signaling request opportunistically purges all expired rows. There is no independent periodic janitor, so expired bounded SDP and its peer host candidates can remain in local PostgreSQL until later signaling activity or operational cleanup.
+
+Create, viewer claim, signaling and delete are process-limited respectively to 8, 30, 180 and 30 requests/minute using hashed IP plus applicable code/token subjects. These local limits are abuse friction, not a distributed production control.
+
+The `dev:phone` launcher also runs a separate unversioned HTTP server on the selected LAN host, port 3080 by default. `GET/HEAD /rada-phone-demo-ca.crt` returns only the public development CA certificate and `GET/HEAD /health` returns minimal health JSON; other methods/paths fail. This helper is not part of the Next.js or production API and never serves private key material.
+
 ### Development-only operator routes
 
 The following routes back the local <code>/{locale}/admin</code> control room. They perform real PostgreSQL mutations, but only when <code>NODE_ENV</code> is not <code>production</code>. They intentionally have no staff login or role check yet; every route returns <code>404 not_found</code> before CSRF parsing or database access in production. Run them only on a trusted local development host.
@@ -532,6 +624,8 @@ These are HTML routes, not JSON API contracts:
 | `/{locale}/my-sports`       | followed entities, personalized schedule and calendar export                        |
 | `/{locale}/notifications`   | in-app inbox, read state and demo notification controls                             |
 | `/{locale}/settings`        | local theme/spoiler/data-saver plus global in-app notification/account foundations  |
+| `/{locale}/broadcast`       | development-only phone camera broadcaster; production 404                           |
+| `/{locale}/broadcast/watch` | development-only one-viewer direct WebRTC receiver; production 404                  |
 | `/{locale}/admin`           | development-only event/source/rights/provider control room; production 404          |
 
 `locale` is `et` or `en`; unknown locale/entity slugs return the localized not-found state. Additional page routes should be added here only after they exist.
@@ -547,7 +641,8 @@ Production integration will require versioned, validated interfaces for at least
 - product/offer listing, checkout intent and signed/idempotent payment webhooks;
 - data export/deletion request/status/download;
 - authenticated schedule/results ingestion with provider event idempotency;
-- production-authenticated editor/operator catalogue, correction, rights, stream-provider control and audit endpoints; and
+- production-authenticated editor/operator catalogue, correction, rights, stream-provider control and audit endpoints;
+- authenticated and rights-aware contribution ingest plus Internet-capable WebRTC signaling/TURN/SFU interfaces; and
 - internal outbox/notification delivery and provider callback endpoints.
 
 Before exposing a partner/public API, generate a complete OpenAPI document from the same runtime schemas, add cursor pagination, explicit compatibility/deprecation policy, per-client OAuth scopes, webhook signing/replay defense and contract tests. Do not expose internal Drizzle rows directly: public DTOs must keep rights contract references, raw source payloads, session/token hashes, provider IDs and audit/security data private.

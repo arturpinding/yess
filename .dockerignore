@@ -12,6 +12,7 @@ coverage
 playwright-report
 test-results
 .local-media
+.local-certificates
 *.tsbuildinfo
 *.log
 

@@ -153,6 +153,12 @@ export const playbackState = pgEnum("playback_state", [
 ]);
 export const ingestionKind = pgEnum("ingestion_kind", ["schedule", "results", "media", "manual"]);
 export const outboxState = pgEnum("outbox_state", ["pending", "processing", "published", "failed"]);
+export const demoBroadcastState = pgEnum("demo_broadcast_state", [
+  "created",
+  "offer_ready",
+  "viewer_claimed",
+  "connected",
+]);
 
 const timestamps = () => ({
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
@@ -254,6 +260,69 @@ export const sessions = pgTable(
     uniqueIndex("sessions_token_hash_unique").on(table.tokenHash),
     index("sessions_user_expires_idx").on(table.userId, table.expiresAt),
     check("sessions_expiry_check", sql`${table.expiresAt} > ${table.issuedAt}`),
+  ],
+);
+
+/**
+ * Development-only, short-lived WebRTC signaling state. Raw access tokens are
+ * returned once and never persisted; SDP is removed with the row on expiry or
+ * explicit publisher deletion.
+ */
+export const demoBroadcasts = pgTable(
+  "demo_broadcasts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: char("code", { length: 8 }).notNull(),
+    locale: varchar("locale", { length: 5 }).notNull(),
+    state: demoBroadcastState("state").default("created").notNull(),
+    publisherTokenHash: char("publisher_token_hash", { length: 64 }).notNull(),
+    viewerTokenHash: char("viewer_token_hash", { length: 64 }),
+    offerSdp: text("offer_sdp"),
+    offerSdpHash: char("offer_sdp_hash", { length: 64 }),
+    answerSdp: text("answer_sdp"),
+    answerSdpHash: char("answer_sdp_hash", { length: 64 }),
+    viewerClaimedAt: timestamp("viewer_claimed_at", { withTimezone: true, mode: "date" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+    version: integer("version").default(1).notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("demo_broadcasts_code_unique").on(table.code),
+    index("demo_broadcasts_expiry_idx").on(table.expiresAt),
+    index("demo_broadcasts_state_expiry_idx").on(table.state, table.expiresAt),
+    check("demo_broadcasts_code_check", sql`${table.code} ~ '^[0-9A-HJKMNP-TV-Z]{8}$'`),
+    check("demo_broadcasts_locale_check", sql`${table.locale} in ('et', 'en')`),
+    check(
+      "demo_broadcasts_publisher_hash_check",
+      sql`${table.publisherTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "demo_broadcasts_viewer_hash_check",
+      sql`${table.viewerTokenHash} is null or ${table.viewerTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "demo_broadcasts_offer_pair_check",
+      sql`(${table.offerSdp} is null) = (${table.offerSdpHash} is null)`,
+    ),
+    check(
+      "demo_broadcasts_answer_pair_check",
+      sql`(${table.answerSdp} is null) = (${table.answerSdpHash} is null)`,
+    ),
+    check(
+      "demo_broadcasts_viewer_pair_check",
+      sql`(${table.viewerTokenHash} is null) = (${table.viewerClaimedAt} is null)`,
+    ),
+    check("demo_broadcasts_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
+    check("demo_broadcasts_version_check", sql`${table.version} > 0`),
+    check(
+      "demo_broadcasts_state_check",
+      sql`(
+        (${table.state} = 'created' and ${table.offerSdp} is null and ${table.viewerTokenHash} is null and ${table.answerSdp} is null)
+        or (${table.state} = 'offer_ready' and ${table.offerSdp} is not null and ${table.viewerTokenHash} is null and ${table.answerSdp} is null)
+        or (${table.state} = 'viewer_claimed' and ${table.offerSdp} is not null and ${table.viewerTokenHash} is not null and ${table.answerSdp} is null)
+        or (${table.state} = 'connected' and ${table.offerSdp} is not null and ${table.viewerTokenHash} is not null and ${table.answerSdp} is not null)
+      )`,
+    ),
   ],
 );
 
@@ -1204,3 +1273,4 @@ export type MediaProviderOperation = typeof mediaProviderOperations.$inferSelect
 export type RightsWindow = typeof rightsWindows.$inferSelect;
 export type Follow = typeof follows.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type DemoBroadcast = typeof demoBroadcasts.$inferSelect;

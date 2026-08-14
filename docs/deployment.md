@@ -20,6 +20,50 @@ The application listens on `http://localhost:3000`. To exercise the development 
 
 The database client is lazy and explicitly recognizes Next's production-build phase. When `DATABASE_URL` is absent during metadata collection, that phase may construct the client against an inert local default without connecting, so a database secret need not be baked into the image. A production runtime without `DATABASE_URL` fails closed. A successful build therefore does not prove runtime database readiness; the readiness probe is the deployment gate.
 
+## Phone-camera LAN demo
+
+The phone-camera demo is a development-only direct browser WebRTC path for one Android broadcaster and one computer viewer. It is independent of the `media:provider` command: it does not use FFmpeg, HLS, the admin stream catalogue or port 8090, and the signaling server does not receive or record the media.
+
+Prerequisites are the normal migrated/seeded PostgreSQL setup plus OpenSSL on `PATH`. Put the phone and computer on the same trusted Wi-Fi, then run this instead of `npm run dev`:
+
+```bash
+npm run dev:phone
+```
+
+The launcher:
+
+- chooses an assigned non-loopback RFC1918 IPv4 address, preferring a physical interface over common virtual bridges; `PHONE_DEMO_HOST` can select another assigned private address;
+- validates every host/port before passing argument arrays directly to OpenSSL/Next.js—no shell command interpolation;
+- generates a 14-day constrained development CA and a three-day TLS server certificate with the selected IP, `localhost` and `127.0.0.1` SANs, or reuses them only when the host matches, the keys/certificates match, the chain verifies and more than 24 hours remain;
+- stores private material below ignored `.local-certificates/` with 0700 directories and 0600 private keys;
+- starts Next.js 16 development HTTPS on `0.0.0.0:3000`, setting `APP_ORIGIN=https://LAN-IP:3000` and allowing only that validated additional development origin; and
+- starts a separate HTTP server bound to the selected LAN IP on port 3080. It serves only `GET/HEAD /rada-phone-demo-ca.crt` and `GET/HEAD /health`; all other paths return 404, so neither private keys nor a directory listing are exposed.
+
+Optional overrides remain non-privileged and must be distinct:
+
+```bash
+PHONE_DEMO_HOST=192.168.1.42 \
+PHONE_DEMO_PORT=3000 \
+PHONE_DEMO_CA_PORT=3080 \
+npm run dev:phone
+```
+
+### Android and computer workflow
+
+1. Confirm the terminal prints the intended Wi-Fi IP. If it selected the wrong adapter, stop it and set `PHONE_DEMO_HOST` to an assigned private address.
+2. On Android, open the printed `http://LAN-IP:3080/rada-phone-demo-ca.crt` URL. This initial download is unauthenticated HTTP, so use only a trusted LAN and compare the downloaded certificate's SHA-256 fingerprint with the terminal where Android exposes it. USB transfer of that public file is safer on a network you do not fully control.
+3. Install it under the device's CA-certificate control, commonly **Settings → Security and privacy → More security settings → Encryption and credentials → Install a certificate → CA certificate**. Menu labels vary by Android vendor. The “network may be monitored” warning is real: the installed CA is a powerful trust decision, even though its private key stays on the development computer.
+4. On the computer, download the same public CA and verify the printed fingerprint. Use a disposable demo browser/profile. Either import the CA into that browser's or operating system's trust store, or visit the exact `https://LAN-IP:3000` URL and explicitly accept its development-certificate interstitial if the browser permits an exception. Firefox can use its own certificate store even when the operating system trusts the CA. Never accept an unfamiliar certificate warning or install an unverified CA.
+5. On the phone, open `https://LAN-IP:3000/et/broadcast` (or `/en/broadcast`), choose a camera, start, and grant camera/microphone permission. HTTPS is required for phone browser media capture.
+6. On the computer, open the exact viewer link displayed by the phone, or open `https://LAN-IP:3000/et/broadcast/watch` and enter its formatted eight-character code. Both devices must use the same `https://LAN-IP:3000` origin; do not substitute `localhost` on the computer.
+7. Stop on the phone before ending the launcher. Then remove **RADA Phone Demo CA** from Android and from the computer/browser if it was imported, and remove any saved browser certificate exception. Delete the local certificate directory too if it will not be reused.
+
+The phone offers direct host candidates only. There is no STUN, TURN, SFU, media server, server recording or second viewer. TCP 3000 and 3080 must be allowed through the computer firewall; Wi-Fi AP/client isolation, guest networks and VPN routing can block signaling or peer connectivity even when both devices show the same SSID. Never expose the development control/media-provider port 8090. Binding Next.js to the LAN also exposes other development routes, including the no-login admin view, so use a trusted private network and stop the launcher immediately after the demo.
+
+The session expiry comes from the server and is currently 30 minutes. When it is reached, the phone stops its media tracks and peer connection and makes a best-effort delete request. Explicit Stop, navigation and page shutdown use the same deletion path, but a browser closing cannot guarantee delivery. Expired sessions fail closed: an exact later access deletes the row and returns `410`, while any later development signaling request opportunistically purges all expired rows. There is no independent periodic janitor, so bounded offer/answer SDP and its peer host candidates can remain in local PostgreSQL after expiry until one of those later requests or manual operational cleanup.
+
+As a development alternative, `adb reverse tcp:3000 tcp:3000` lets the phone open the normal `http://localhost:3000/et/broadcast` while `npm run dev` runs on the computer; browsers treat localhost as a secure context, so this avoids installing a CA. The computer viewer also uses its normal localhost origin. Direct WebRTC still needs usable connectivity between device candidates, so USB forwarding alone does not replace a shared reachable network.
+
 ## Container image
 
 `Dockerfile` uses a Node 22 multi-stage build and Next.js standalone output. Build it from the repository root:
@@ -70,6 +114,9 @@ The application deliberately returns 404 for `/{et,en}/admin` and its event/sour
 | `SESSION_SECRET`                  |     yes     | >=32 random bytes, independent key, stored in secret manager, versioned rotation                                                      |
 | `MEDIA_SIGNING_SECRET`            |     yes     | >=32 random bytes, distinct from session key; replace symmetric local design with managed/versioned media keys where vendor allows    |
 | `APP_ORIGIN`                      |     yes     | canonical HTTPS origin; used for origin/CSRF policy                                                                                   |
+| `PHONE_DEMO_HOST`                 | local only  | optional assigned RFC1918 address selected by `dev:phone`; never accepted as an arbitrary hostname                                    |
+| `PHONE_DEMO_PORT`                 | local only  | optional non-privileged HTTPS application port; defaults to `3000`                                                                    |
+| `PHONE_DEMO_CA_PORT`              | local only  | optional non-privileged public-CA download port; defaults to `3080` and must differ from the application port                         |
 | `DEFAULT_COUNTRY`                 |     yes     | conservative two-letter fallback; unknown geo should fail closed when rights require territory certainty                              |
 | `LOG_LEVEL`                       |     yes     | normally `info`; temporary debug logging must preserve redaction                                                                      |
 | `MEDIA_PROVIDER_URL`              | local/media | paired with `MEDIA_PROVIDER_TOKEN`; loopback HTTP is permitted only outside production, while production configuration requires HTTPS |
