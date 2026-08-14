@@ -1,6 +1,0 @@
-streamlit
-plotly
-pandas
-scipy
-statsmodels
-pytest
