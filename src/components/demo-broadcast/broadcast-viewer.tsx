@@ -22,6 +22,7 @@ type ViewerClaim = {
   viewerToken: string;
   offer: RTCSessionDescriptionInit & { type: "offer" };
   expiresAt: string;
+  iceServers: RTCIceServer[];
 };
 
 export function BroadcastViewer({
@@ -113,7 +114,7 @@ export function BroadcastViewer({
         claimRef.current = claimed;
       }
 
-      const peer = new RTCPeerConnection({ iceServers: [] });
+      const peer = new RTCPeerConnection({ iceServers: claimed.iceServers });
       peerRef.current = peer;
       let receivedMedia = false;
 

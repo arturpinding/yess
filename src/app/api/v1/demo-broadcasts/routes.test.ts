@@ -51,10 +51,11 @@ function request(
   method: string,
   path: string,
   body?: unknown,
-  options: { csrf?: boolean; authorization?: string } = {},
+  options: { csrf?: boolean; authorization?: string; origin?: string } = {},
 ) {
+  const origin = options.origin ?? "http://localhost:3000";
   const headers = new Headers({
-    origin: "http://localhost:3000",
+    origin,
     "x-real-ip": "192.0.2.10",
   });
   if (body !== undefined) headers.set("content-type", "application/json");
@@ -63,7 +64,7 @@ function request(
     headers.set("x-csrf-token", csrfToken);
   }
   if (options.authorization) headers.set("authorization", options.authorization);
-  return new NextRequest(`http://localhost:3000${path}`, {
+  return new NextRequest(`${origin}${path}`, {
     method,
     headers,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -107,7 +108,7 @@ describe("development demo broadcast signaling routes", () => {
     expect(response.status).toBe(201);
     expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
     await expect(response.json()).resolves.toEqual({
-      data: { code, publisherToken, expiresAt },
+      data: { code, publisherToken, expiresAt, iceServers: [] },
     });
     expect(mocks.create).toHaveBeenCalledWith("et");
   });
@@ -180,7 +181,7 @@ describe("development demo broadcast signaling routes", () => {
     expect(viewerResponse.status).toBe(201);
     expect(viewerResponse.headers.get("cache-control")).toBe("private, no-store, max-age=0");
     await expect(viewerResponse.json()).resolves.toMatchObject({
-      data: { viewerToken, offer: { type: "offer", sdp: offerSdp } },
+      data: { viewerToken, offer: { type: "offer", sdp: offerSdp }, iceServers: [] },
     });
 
     mocks.submitAnswer.mockResolvedValue({ accepted: true, state: "connected", expiresAt });
@@ -233,6 +234,7 @@ describe("development demo broadcast signaling routes", () => {
 
   it("hard-404s every signaling route in production before auth, parsing, or service access", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_ORIGIN", "https://rada.example");
     const responses = await Promise.all([
       POST_CREATE(request("POST", "/api/v1/demo-broadcasts", { not: "valid" })),
       POST_OFFER(
@@ -259,5 +261,55 @@ describe("development demo broadcast signaling routes", () => {
     expect(mocks.submitAnswer).not.toHaveBeenCalled();
     expect(mocks.getAnswer).not.toHaveBeenCalled();
     expect(mocks.delete).not.toHaveBeenCalled();
+  });
+
+  it("allows signaling in production only after explicit opt-in", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_ORIGIN", "https://rada.example");
+    vi.stubEnv("PHONE_BROADCAST_ENABLED", "true");
+    vi.stubEnv(
+      "PHONE_BROADCAST_ICE_SERVERS_JSON",
+      JSON.stringify([
+        {
+          urls: "turns:turn.example.test:443?transport=tcp",
+          username: "short-lived-user",
+          credential: "short-lived-credential",
+        },
+      ]),
+    );
+    mocks.create.mockResolvedValue({ code, publisherToken, expiresAt });
+
+    const response = await POST_CREATE(
+      request(
+        "POST",
+        "/api/v1/demo-broadcasts",
+        { locale: "en" },
+        {
+          csrf: true,
+          origin: "https://rada.example",
+        },
+      ),
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        code,
+        iceServers: [{ urls: "turns:turn.example.test:443?transport=tcp" }],
+      },
+    });
+  });
+
+  it("hard-404s direct signaling when the managed provider is selected", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PHONE_BROADCAST_ENABLED", "true");
+    vi.stubEnv("PHONE_BROADCAST_PROVIDER", "livekit-cloud");
+
+    const response = await POST_CREATE(
+      request("POST", "/api/v1/demo-broadcasts", { locale: "en" }, { csrf: true }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 });

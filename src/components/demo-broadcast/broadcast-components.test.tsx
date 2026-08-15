@@ -23,13 +23,15 @@ class FakePeerConnection extends EventTarget {
   onconnectionstatechange: ((event: Event) => void) | null = null;
   oniceconnectionstatechange: ((event: Event) => void) | null = null;
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
+  readonly configuration: RTCConfiguration | undefined;
   readonly addTrack = vi.fn();
   readonly close = vi.fn(() => {
     this.connectionState = "closed";
   });
 
-  constructor() {
+  constructor(configuration?: RTCConfiguration) {
     super();
+    this.configuration = configuration;
     FakePeerConnection.instances.push(this);
   }
 
@@ -107,7 +109,20 @@ describe("direct-device broadcast components", () => {
       const url = String(input);
       if (url === "/api/v1/demo-broadcasts" && init?.method === "POST") {
         return json(
-          { data: { code: "ABCD-EFGH", publisherToken: PUBLISHER_TOKEN, expiresAt: EXPIRES_AT } },
+          {
+            data: {
+              code: "ABCD-EFGH",
+              publisherToken: PUBLISHER_TOKEN,
+              expiresAt: EXPIRES_AT,
+              iceServers: [
+                {
+                  urls: "turns:turn.example.test:443?transport=tcp",
+                  username: "publisher-user",
+                  credential: "publisher-credential",
+                },
+              ],
+            },
+          },
           201,
         );
       }
@@ -142,6 +157,13 @@ describe("direct-device broadcast components", () => {
     );
     const peer = FakePeerConnection.instances[0];
     expect(peer).toBeDefined();
+    expect(peer?.configuration?.iceServers).toEqual([
+      {
+        urls: "turns:turn.example.test:443?transport=tcp",
+        username: "publisher-user",
+        credential: "publisher-credential",
+      },
+    ]);
     expect(peer?.addTrack).toHaveBeenCalledTimes(2);
     expect(peer?.remoteDescription).toEqual({ type: "answer", sdp: ANSWER_SDP });
     expect(screen.queryByText("LIVE")).not.toBeInTheDocument();
@@ -189,6 +211,7 @@ describe("direct-device broadcast components", () => {
               viewerToken: VIEWER_TOKEN,
               offer: { type: "offer", sdp: OFFER_SDP },
               expiresAt: EXPIRES_AT,
+              iceServers: [{ urls: "stun:stun.example.test:3478" }],
             },
           },
           201,
@@ -211,6 +234,7 @@ describe("direct-device broadcast components", () => {
     );
 
     const peer = FakePeerConnection.instances[0];
+    expect(peer?.configuration?.iceServers).toEqual([{ urls: "stun:stun.example.test:3478" }]);
     expect(peer?.remoteDescription).toEqual({ type: "offer", sdp: OFFER_SDP });
     await act(async () => {
       peer?.ontrack?.({ streams: [remoteStream], track: remoteTrack } as unknown as RTCTrackEvent);
@@ -242,6 +266,7 @@ describe("direct-device broadcast components", () => {
               viewerToken: VIEWER_TOKEN,
               offer: { type: "offer", sdp: OFFER_SDP },
               expiresAt: EXPIRES_AT,
+              iceServers: [],
             },
           },
           201,
@@ -300,7 +325,14 @@ describe("direct-device broadcast components", () => {
       const url = String(input);
       if (url === "/api/v1/demo-broadcasts" && init?.method === "POST") {
         return json(
-          { data: { code: "ABCD-EFGH", publisherToken: PUBLISHER_TOKEN, expiresAt: EXPIRES_AT } },
+          {
+            data: {
+              code: "ABCD-EFGH",
+              publisherToken: PUBLISHER_TOKEN,
+              expiresAt: EXPIRES_AT,
+              iceServers: [],
+            },
+          },
           201,
         );
       }
@@ -343,7 +375,14 @@ describe("direct-device broadcast components", () => {
       const url = String(input);
       if (url === "/api/v1/demo-broadcasts" && init?.method === "POST") {
         return json(
-          { data: { code: "ABCD-EFGH", publisherToken: PUBLISHER_TOKEN, expiresAt } },
+          {
+            data: {
+              code: "ABCD-EFGH",
+              publisherToken: PUBLISHER_TOKEN,
+              expiresAt,
+              iceServers: [],
+            },
+          },
           201,
         );
       }

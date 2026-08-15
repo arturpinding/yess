@@ -1,6 +1,6 @@
 # Deployment and scaling
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-08-15
 
 This repository supplies a standalone Next.js container and a PostgreSQL schema. `docker-compose.yml` is a local PostgreSQL convenience, not a production platform. A production launch still needs contracted identity, payment, messaging and media providers; managed secrets, cache/lease storage, observability, backups and media rights.
 
@@ -20,9 +20,46 @@ The application listens on `http://localhost:3000`. To exercise the development 
 
 The database client is lazy and explicitly recognizes Next's production-build phase. When `DATABASE_URL` is absent during metadata collection, that phase may construct the client against an inert local default without connecting, so a database secret need not be baked into the image. A production runtime without `DATABASE_URL` fails closed. A successful build therefore does not prove runtime database readiness; the readiness probe is the deployment gate.
 
+## Managed phone broadcasting on Vercel
+
+This mode solves LAN firewall/client-isolation problems by separating the control and media paths:
+
+```text
+Phone browser -- WebRTC --> LiveKit Cloud SFU <-- WebRTC -- computer browsers
+                             ^
+                 Vercel: pages, authorization, room control and token signing
+```
+
+Vercel does not proxy or buffer the camera stream. Its functions use the LiveKit server API to create/delete a room, sign participant tokens and use PostgreSQL to map a short code to the room. The phone receives a room-bound publish-only token; every viewer lookup receives a fresh room-bound subscribe-only token with a unique identity. `LIVEKIT_API_SECRET` never reaches either browser.
+
+1. In LiveKit Cloud, create a project and a new API key pair. Copy its project URL (`wss://<project>.livekit.cloud`) and put all three values directly into Vercel's secret store. Never commit them or prefix them with `NEXT_PUBLIC_`. If a key or secret has been pasted into chat, an issue, a log or a screen recording, revoke that pair in LiveKit first and create a replacement; deleting the message does not rotate a credential.
+2. Attach a persistent PostgreSQL database that is reachable from Vercel. Set `DATABASE_URL`, then run `npm run db:migrate` once through a controlled release/migration job. Migration `0005_blue_sharon_carter.sql` creates `live_broadcasts`, `0006_worthless_miek.sql` adds the durable provider-cleanup marker, and `0007_damp_sinister_six.sql` adds the LiveKit Cloud provider and `wss://` locator constraint while retaining legacy rows. Do not make every web instance race migrations at startup.
+3. Set these Vercel Production environment variables (plus the normal application variables):
+
+```dotenv
+APP_ORIGIN=https://your-stable-domain.example
+PHONE_BROADCAST_ENABLED=true
+PHONE_BROADCAST_PROVIDER=livekit-cloud
+PHONE_BROADCAST_ACCESS_KEY=<strong private value, at least 12 characters>
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=<server-only LiveKit API key>
+LIVEKIT_API_SECRET=<server-only LiveKit API secret>
+```
+
+`SESSION_SECRET` and `MEDIA_SIGNING_SECRET` must also be distinct random values of at least 32 characters. `APP_ORIGIN` must exactly match the URL in the phone's address bar; a different Vercel preview hostname fails the same-origin CSRF check. Prefer one stable custom domain for this test. `LIVEKIT_URL` must be the root `wss://` project URL on `*.livekit.cloud`, with no custom port, embedded credentials, path, query string or fragment.
+
+4. Redeploy after setting the variables. When this provider is selected, the generated CSP permits `connect-src` to `https://*.livekit.cloud` and `wss://*.livekit.cloud`. The wildcard is required because the browser SDK fetches region settings and may connect to a provider-selected regional hostname; LiveKit's official [firewall guidance](https://docs.livekit.io/deploy/admin/firewall/) likewise requires `*.livekit.cloud` on TCP 443. The allowance is absent for the `direct` provider. Camera and microphone remain enabled only on the exact `/{et,en}/broadcast` document.
+5. On the phone, open `https://your-stable-domain.example/et/broadcast`, enter the match name and `PHONE_BROADCAST_ACCESS_KEY`, choose the camera, and start. Keep that page open while filming.
+6. On the computer, open `/et/broadcast/watch`. Select the match from the automatically refreshed list, enter its code, or open the viewing link copied from the phone. Each computer joins the same LiveKit room with its own subscribe-only token; viewers do not consume a single browser-to-browser slot.
+7. Press **Stop broadcast** on the phone. The browser disconnects, the API marks the database row stopped and deletes the LiveKit room. Successful deletion is recorded; a transient provider failure leaves the row cleanup-pending. Later managed-broadcast traffic retries at most five pending rooms per request with a 30-second per-room backoff. Page shutdown is best effort, and six-hour expiry is enforced during later requests. A scheduled reconciliation job is still advisable before paid production use.
+
+The publisher media token is scoped to its room with publish enabled and subscribe/data disabled. Viewer media tokens are scoped to the same room with subscribe enabled and publish/data disabled, use a fresh identity per lookup and cannot outlive the broadcast. Their initial-connect TTL is at most 10 minutes. Each room is capped at 51 participants and has an empty timeout of at most five minutes; with one phone publisher, the application cap is therefore 50 simultaneous viewers. The separate RADA `publisherToken` authorizes status/stop API calls. The shared broadcaster key is still only a practical personal-demo control, not staff authentication or moderation, and the process-local API limiter is not shared across Vercel instances. Replace both with real identity/RBAC, audience authorization and a distributed limiter before opening the feature to other people.
+
+The LiveKit Cloud free **Build** plan currently includes **5,000 WebRTC participant minutes** and **50 GB downstream data transfer per month**. These are hard caps: new requests fail after an allowance is exceeded, rather than silently becoming paid overage. Every connected phone or viewer consumes participant time, so one hour with one phone and three viewers uses 240 participant minutes. Confirm the current values before a demo in LiveKit's official [quotas and limits](https://docs.livekit.io/deploy/admin/quotas-and-limits/) documentation. This repository does not start Egress or recording. Test a real phone/viewer session, latency, browser compatibility, quota telemetry and room cleanup on the deployed domain before relying on it for a match.
+
 ## Phone-camera LAN demo
 
-The phone-camera demo is a development-only direct browser WebRTC path for one Android broadcaster and one computer viewer. It is independent of the `media:provider` command: it does not use FFmpeg, HLS, the admin stream catalogue or port 8090, and the signaling server does not receive or record the media.
+The phone-camera demo is a direct browser WebRTC test path for one Android broadcaster and one computer viewer. It is available by default only in development. It is independent of the `media:provider` command: it does not use FFmpeg, HLS, the admin stream catalogue or port 8090, and the signaling server does not receive or record the media.
 
 Prerequisites are the normal migrated/seeded PostgreSQL setup plus OpenSSL on `PATH`. Put the phone and computer on the same trusted Wi-Fi, then run this instead of `npm run dev`:
 
@@ -58,7 +95,9 @@ npm run dev:phone
 6. On the computer, open the exact viewer link displayed by the phone, or open `https://LAN-IP:3000/et/broadcast/watch` and enter its formatted eight-character code. Both devices must use the same `https://LAN-IP:3000` origin; do not substitute `localhost` on the computer.
 7. Stop on the phone before ending the launcher. Then remove **RADA Phone Demo CA** from Android and from the computer/browser if it was imported, and remove any saved browser certificate exception. Delete the local certificate directory too if it will not be reused.
 
-The phone offers direct host candidates only. There is no STUN, TURN, SFU, media server, server recording or second viewer. TCP 3000 and 3080 must be allowed through the computer firewall; Wi-Fi AP/client isolation, guest networks and VPN routing can block signaling or peer connectivity even when both devices show the same SSID. Never expose the development control/media-provider port 8090. Binding Next.js to the LAN also exposes other development routes, including the no-login admin view, so use a trusted private network and stop the launcher immediately after the demo.
+The default local configuration offers direct host candidates only. There is no SFU, media server, server recording or second viewer. TCP 3000 and 3080 must be allowed through the computer firewall; Wi-Fi AP/client isolation, guest networks and VPN routing can block signaling or peer connectivity even when both devices show the same SSID. Never expose the development control/media-provider port 8090. Binding Next.js to the LAN also exposes other development routes, including the no-login admin view, so use a trusted private network and stop the launcher immediately after the demo.
+
+For a protected production-shaped test of this legacy direct mode, set `PHONE_BROADCAST_ENABLED=true`, `PHONE_BROADCAST_PROVIDER=direct` and provide `PHONE_BROADCAST_ICE_SERVERS_JSON` as a JSON array of `RTCIceServer`-shaped objects. At least one authenticated `turn:` or `turns:` URL is required in production. TURN credentials necessarily reach participating browsers, so use short-lived credentials. The managed Vercel mode above does not use this setting.
 
 The session expiry comes from the server and is currently 30 minutes. When it is reached, the phone stops its media tracks and peer connection and makes a best-effort delete request. Explicit Stop, navigation and page shutdown use the same deletion path, but a browser closing cannot guarantee delivery. Expired sessions fail closed: an exact later access deletes the row and returns `410`, while any later development signaling request opportunistically purges all expired rows. There is no independent periodic janitor, so bounded offer/answer SDP and its peer host candidates can remain in local PostgreSQL after expiry until one of those later requests or manual operational cleanup.
 
@@ -108,28 +147,35 @@ The application deliberately returns 404 for `/{et,en}/admin` and its event/sour
 
 ## Environment and secrets
 
-| Variable                          |  Required   | Production treatment                                                                                                                  |
-| --------------------------------- | :---------: | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                    |     yes     | TLS-enforced least-privilege role; use a pooled application URL and a separate migration role                                         |
-| `SESSION_SECRET`                  |     yes     | >=32 random bytes, independent key, stored in secret manager, versioned rotation                                                      |
-| `MEDIA_SIGNING_SECRET`            |     yes     | >=32 random bytes, distinct from session key; replace symmetric local design with managed/versioned media keys where vendor allows    |
-| `APP_ORIGIN`                      |     yes     | canonical HTTPS origin; used for origin/CSRF policy                                                                                   |
-| `PHONE_DEMO_HOST`                 | local only  | optional assigned RFC1918 address selected by `dev:phone`; never accepted as an arbitrary hostname                                    |
-| `PHONE_DEMO_PORT`                 | local only  | optional non-privileged HTTPS application port; defaults to `3000`                                                                    |
-| `PHONE_DEMO_CA_PORT`              | local only  | optional non-privileged public-CA download port; defaults to `3080` and must differ from the application port                         |
-| `DEFAULT_COUNTRY`                 |     yes     | conservative two-letter fallback; unknown geo should fail closed when rights require territory certainty                              |
-| `LOG_LEVEL`                       |     yes     | normally `info`; temporary debug logging must preserve redaction                                                                      |
-| `MEDIA_PROVIDER_URL`              | local/media | paired with `MEDIA_PROVIDER_TOKEN`; loopback HTTP is permitted only outside production, while production configuration requires HTTPS |
-| `MEDIA_PROVIDER_TOKEN`            | local/media | >=32-character server-only bearer credential; never expose it to the browser or commit a production value                             |
-| `LOCAL_MEDIA_PROVIDER_HOST`       | local only  | loopback bind for the supplied synthetic service; do not expose it publicly                                                           |
-| `LOCAL_MEDIA_PROVIDER_PORT`       | local only  | defaults to `8090`; must match the configured adapter/network policy                                                                  |
-| `LOCAL_MEDIA_PROVIDER_PUBLIC_URL` | local only  | base URL placed in generated playback locators; defaults to the loopback provider                                                     |
-| `REDIS_URL`                       | integration | TLS/authenticated shared store, private network and explicit key TTLs                                                                 |
-| `PAYMENT_PROVIDER`                | integration | adapter selection only; credentials arrive through separate secret references                                                         |
-| `PUSH_PROVIDER`                   | integration | adapter selection only; encrypt device tokens at rest                                                                                 |
-| `EMAIL_PROVIDER`                  | integration | adapter selection only; use signed/verified webhook callbacks                                                                         |
+| Variable                           |   Required   | Production treatment                                                                                                                  |
+| ---------------------------------- | :----------: | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                     |     yes      | TLS-enforced least-privilege role; use a pooled application URL and a separate migration role                                         |
+| `SESSION_SECRET`                   |     yes      | >=32 random bytes, independent key, stored in secret manager, versioned rotation                                                      |
+| `MEDIA_SIGNING_SECRET`             |     yes      | >=32 random bytes, distinct from session key; replace symmetric local design with managed/versioned media keys where vendor allows    |
+| `APP_ORIGIN`                       |     yes      | canonical HTTPS origin; used for origin/CSRF policy                                                                                   |
+| `PHONE_DEMO_HOST`                  |  local only  | optional assigned RFC1918 address selected by `dev:phone`; never accepted as an arbitrary hostname                                    |
+| `PHONE_DEMO_PORT`                  |  local only  | optional non-privileged HTTPS application port; defaults to `3000`                                                                    |
+| `PHONE_DEMO_CA_PORT`               |  local only  | optional non-privileged public-CA download port; defaults to `3080` and must differ from the application port                         |
+| `PHONE_BROADCAST_ENABLED`          |  broadcast   | explicit production feature gate; keep false until the selected provider is fully configured                                          |
+| `PHONE_BROADCAST_PROVIDER`         |  broadcast   | `direct` for the legacy one-viewer path or `livekit-cloud` for managed SFU broadcasting                                               |
+| `PHONE_BROADCAST_ICE_SERVERS_JSON` | direct only  | authenticated TURN configuration required when the direct provider is enabled in production                                           |
+| `PHONE_BROADCAST_ACCESS_KEY`       | managed only | >=12-character server-validated broadcaster secret; temporary substitute for real staff authentication                                |
+| `LIVEKIT_URL`                      | managed only | root project `wss://*.livekit.cloud` URL; no port, credentials, additional path, query or fragment                                    |
+| `LIVEKIT_API_KEY`                  | managed only | server-side LiveKit key used to identify signed room tokens and authorize room control; never use a `NEXT_PUBLIC_` variable           |
+| `LIVEKIT_API_SECRET`               | managed only | server-only LiveKit signing/control secret; keep in Vercel's sensitive secret store and rotate immediately after any disclosure       |
+| `DEFAULT_COUNTRY`                  |     yes      | conservative two-letter fallback; unknown geo should fail closed when rights require territory certainty                              |
+| `LOG_LEVEL`                        |     yes      | normally `info`; temporary debug logging must preserve redaction                                                                      |
+| `MEDIA_PROVIDER_URL`               | local/media  | paired with `MEDIA_PROVIDER_TOKEN`; loopback HTTP is permitted only outside production, while production configuration requires HTTPS |
+| `MEDIA_PROVIDER_TOKEN`             | local/media  | >=32-character server-only bearer credential; never expose it to the browser or commit a production value                             |
+| `LOCAL_MEDIA_PROVIDER_HOST`        |  local only  | loopback bind for the supplied synthetic service; do not expose it publicly                                                           |
+| `LOCAL_MEDIA_PROVIDER_PORT`        |  local only  | defaults to `8090`; must match the configured adapter/network policy                                                                  |
+| `LOCAL_MEDIA_PROVIDER_PUBLIC_URL`  |  local only  | base URL placed in generated playback locators; defaults to the loopback provider                                                     |
+| `REDIS_URL`                        | integration  | TLS/authenticated shared store, private network and explicit key TTLs                                                                 |
+| `PAYMENT_PROVIDER`                 | integration  | adapter selection only; credentials arrive through separate secret references                                                         |
+| `PUSH_PROVIDER`                    | integration  | adapter selection only; encrypt device tokens at rest                                                                                 |
+| `EMAIL_PROVIDER`                   | integration  | adapter selection only; use signed/verified webhook callbacks                                                                         |
 
-The current environment schema rejects HTTP production origins/provider URLs, short secrets, matching session/media secrets, unpaired media-provider URL/token values and obvious placeholder secret values. Rotate keys with overlap: deploy verification for old+new key IDs, issue only the new key, wait for maximum token lifetime, then retire the old key. A single unversioned secret replacement logs out users or interrupts playback.
+The current environment schema rejects HTTP production origins/provider URLs, an unsafe LiveKit URL, short secrets, matching session/media secrets, unpaired media-provider URL/token values and obvious placeholder secret values. For a LiveKit key-pair rotation, create the replacement, update Vercel, redeploy and verify room creation/viewing before deleting the old pair. Revoke first when exposure is suspected, accepting interruption as the safer outcome. Session/media signing keys need an overlapping versioned rotation design; a single unversioned replacement logs out users or interrupts playback.
 
 ## Database release process
 

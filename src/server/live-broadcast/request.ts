@@ -1,30 +1,41 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { parseDemoBroadcastBearer } from "@/server/demo-broadcast/contracts";
+import { getEnvironment } from "@/server/environment";
 import { privateJson, rateLimitHeaders } from "@/server/http/api-response";
 import { checkRequestCsrf, consumeApiRateLimit, sha256 } from "@/server/security/request-guards";
-import { parseDemoBroadcastBearer } from "./contracts";
-import { DemoBroadcastError } from "./service";
+import { LiveBroadcastError } from "./service";
 
-export { isDirectDemoBroadcastAvailable as isDemoBroadcastAvailable } from "./availability";
+export { isManagedBroadcastAvailable } from "@/server/demo-broadcast/availability";
 
 const RATE_LIMIT_POLICIES = {
-  create: { limit: 8, windowMs: 60_000 },
-  viewer: { limit: 30, windowMs: 60_000 },
-  signal: { limit: 180, windowMs: 60_000 },
-  delete: { limit: 30, windowMs: 60_000 },
+  create: { limit: 5, windowMs: 60_000 },
+  list: { limit: 60, windowMs: 60_000 },
+  view: { limit: 90, windowMs: 60_000 },
+  status: { limit: 30, windowMs: 60_000 },
+  stop: { limit: 30, windowMs: 60_000 },
 } as const;
 
-export type DemoBroadcastOperation = keyof typeof RATE_LIMIT_POLICIES;
+export type LiveBroadcastOperation = keyof typeof RATE_LIMIT_POLICIES;
 
-export function demoBroadcastNotFoundResponse() {
+export function liveBroadcastNotFoundResponse() {
   return privateJson({ error: { code: "not_found" } }, { status: 404 });
 }
 
-export function requireDemoBroadcastCsrf(request: NextRequest) {
+export function requireLiveBroadcastCsrf(request: NextRequest) {
   const result = checkRequestCsrf(request);
   return result.allowed ? null : privateJson({ error: { code: "csrf_failed" } }, { status: 403 });
 }
 
-export function requireDemoBroadcastBearer(
+export function liveBroadcastAccessKeyMatches(accessKey: string): boolean {
+  const expected = getEnvironment().PHONE_BROADCAST_ACCESS_KEY;
+  if (!expected) return false;
+  const actualHash = createHash("sha256").update(accessKey).digest();
+  const expectedHash = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(actualHash, expectedHash);
+}
+
+export function requireLiveBroadcastBearer(
   request: NextRequest,
 ):
   | { authorized: true; token: string }
@@ -44,9 +55,9 @@ function clientAddressSubject(request: NextRequest): string {
   return sha256(address.slice(0, 256));
 }
 
-export async function enforceDemoBroadcastRateLimit(
+export async function enforceLiveBroadcastRateLimit(
   request: NextRequest,
-  operation: DemoBroadcastOperation,
+  operation: LiveBroadcastOperation,
   identifiers: { code?: string; token?: string } = {},
 ) {
   const policy = RATE_LIMIT_POLICIES[operation];
@@ -57,7 +68,7 @@ export async function enforceDemoBroadcastRateLimit(
   let tightestDecision;
   for (const [kind, subject] of subjects) {
     const decision = await consumeApiRateLimit(
-      `demo-broadcast:${operation}:${kind}`,
+      `live-broadcast:${operation}:${kind}`,
       subject,
       policy,
     );
@@ -82,7 +93,7 @@ export async function enforceDemoBroadcastRateLimit(
   return { allowed: true as const, headers: rateLimitHeaders(tightestDecision) };
 }
 
-export async function readDemoBroadcastJson(request: NextRequest, maxBytes: number) {
+export async function readLiveBroadcastJson(request: NextRequest, maxBytes: number) {
   const contentLength = request.headers.get("content-length");
   if (contentLength && Number.isFinite(Number(contentLength)) && Number(contentLength) > maxBytes) {
     return { valid: false as const };
@@ -98,10 +109,10 @@ export async function readDemoBroadcastJson(request: NextRequest, maxBytes: numb
   }
 }
 
-export function demoBroadcastErrorResponse(error: unknown, headers: Record<string, string> = {}) {
-  if (error instanceof DemoBroadcastError) {
+export function liveBroadcastErrorResponse(error: unknown, headers: Record<string, string> = {}) {
+  if (error instanceof LiveBroadcastError) {
     return privateJson({ error: { code: error.code } }, { status: error.status, headers });
   }
-  // Do not log the error object: unexpected parser/provider errors could carry SDP or credentials.
+  // Provider responses and publishing URLs are credentials; never log the error object here.
   return privateJson({ error: { code: "internal_error" } }, { status: 500, headers });
 }

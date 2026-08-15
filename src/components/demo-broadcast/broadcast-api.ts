@@ -7,11 +7,18 @@ const descriptionSchema = z.object({
   sdp: z.string().min(1).max(131_072),
 });
 
+const iceServerSchema = z.object({
+  urls: z.union([z.string(), z.array(z.string()).min(1)]),
+  username: z.string().optional(),
+  credential: z.string().optional(),
+});
+
 const createResponseSchema = z.object({
   data: z.object({
     code: z.string(),
     publisherToken: z.string().min(16),
     expiresAt: z.string().datetime(),
+    iceServers: z.array(iceServerSchema),
   }),
 });
 
@@ -20,6 +27,7 @@ const viewerResponseSchema = z.object({
     viewerToken: z.string().min(16),
     offer: descriptionSchema.extend({ type: z.literal("offer") }),
     expiresAt: z.string().datetime(),
+    iceServers: z.array(iceServerSchema),
   }),
 });
 

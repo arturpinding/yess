@@ -28,6 +28,18 @@ describe("locale and production route proxy", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
+  it("exposes only broadcast routes after explicit production opt-in", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PHONE_BROADCAST_ENABLED", "true");
+
+    const broadcast = proxy(new NextRequest("https://rada.invalid/en/broadcast"));
+    const admin = proxy(new NextRequest("https://rada.invalid/en/admin"));
+
+    expect(broadcast.status).toBe(200);
+    expect(broadcast.headers.get("x-middleware-next")).toBe("1");
+    expect(admin.status).toBe(404);
+  });
+
   it("keeps localized public routes available outside production", () => {
     vi.stubEnv("NODE_ENV", "test");
 

@@ -1,6 +1,6 @@
 # HTTP API
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-08-15
 
 The current HTTP API is an internal interface for the RADA web application and local demo. It is not a supported public partner API. Server-rendered pages read the catalogue through typed server modules and do not expose a duplicate JSON endpoint merely for architecture's sake.
 
@@ -304,9 +304,94 @@ Cache-Control: private, no-store, max-age=0
 
 This is an authenticated snapshot download, not a long-lived secret subscription URL. Rate limit: 30/minute/profile session.
 
-### Development-only phone broadcast signaling
+### Managed phone broadcasting
 
-These routes coordinate one direct browser-to-browser WebRTC connection. They store bounded SDP setup messages temporarily in PostgreSQL; audio/video does not pass through these routes and is not recorded by RADA. All routes return private/no-store responses and hard-404 before parsing, rate limiting or data access when `NODE_ENV=production`.
+These routes back the `livekit-cloud` phone-broadcast provider. Every route hard-404s unless the broadcast feature is available and `PHONE_BROADCAST_PROVIDER=livekit-cloud`. Responses are private/no-store. Vercel is the control/token server: it creates/deletes rooms, authorizes the phone, lists metadata and signs room access tokens. Browser media travels through the LiveKit Cloud SFU, not through Vercel or the Next.js process.
+
+`LIVEKIT_API_SECRET` remains server-side. The API key is not returned as a standalone configuration field, although it identifies the signer in the JWT issuer claim. The publisher receives a room-bound media JWT with publish permission and no subscribe/data permission. Each viewer lookup creates a fresh unique identity and room-bound media JWT with subscribe permission and no publish/data permission. A media token's initial-connect TTL is the smaller of 10 minutes and the broadcast's remaining life. These LiveKit tokens are distinct from the RADA `publisherToken`, which authorizes status and stop calls. PostgreSQL stores the safe configured `wss://` project URL, provider room name and only a SHA-256 digest of the RADA publisher token; media JWTs are not persisted. Sessions expire after six hours.
+
+#### `POST /api/v1/live-broadcasts`
+
+Creates a LiveKit room and its database record. Requires exact-Origin/double-submit CSRF plus the shared `PHONE_BROADCAST_ACCESS_KEY`. The latter is temporary personal-demo authorization, not a user identity.
+
+```json
+{
+  "locale": "et",
+  "title": "Kalev – Tartu",
+  "accessKey": "<configured broadcaster key>"
+}
+```
+
+Created response — `201`:
+
+```json
+{
+  "data": {
+    "code": "ABCD-EFGH",
+    "title": "Kalev – Tartu",
+    "publisherToken": "<returned-once bearer credential>",
+    "mediaUrl": "wss://project-123.livekit.cloud",
+    "mediaToken": "<short-lived publish-only LiveKit JWT>",
+    "expiresAt": "2026-08-15T16:00:00.000Z"
+  }
+}
+```
+
+Wrong access key is `401 invalid_access_key`; provider provisioning failure is `503 provider_unavailable`.
+
+#### `GET /api/v1/live-broadcasts`
+
+Returns up to 25 non-expired `provisioned` or `live` broadcasts for the computer viewing page. No publisher credentials or LiveKit media tokens are returned.
+
+```json
+{
+  "data": {
+    "broadcasts": [
+      {
+        "code": "ABCD-EFGH",
+        "title": "Kalev – Tartu",
+        "state": "live",
+        "startedAt": "2026-08-15T10:00:00.000Z",
+        "expiresAt": "2026-08-15T16:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+#### `GET /api/v1/live-broadcasts/{code}`
+
+Resolves an active code to the same summary fields plus `mediaUrl` and a fresh subscribe-only `mediaToken`. Every call uses a unique viewer identity; multiple viewer browsers can join the room independently.
+
+```json
+{
+  "data": {
+    "code": "ABCD-EFGH",
+    "title": "Kalev – Tartu",
+    "state": "live",
+    "startedAt": "2026-08-15T10:00:00.000Z",
+    "expiresAt": "2026-08-15T16:00:00.000Z",
+    "mediaUrl": "wss://project-123.livekit.cloud",
+    "mediaToken": "<short-lived subscribe-only LiveKit JWT>"
+  }
+}
+```
+
+Unknown code is `404`; expired or ended broadcasts are `410`.
+
+#### `POST /api/v1/live-broadcasts/{code}/status`
+
+Requires `Authorization: Bearer <publisherToken>` and strict body `{ "state": "live" }`. The phone calls it after it has connected to the LiveKit room and published its tracks. Repetition after the row is live is idempotent.
+
+#### `DELETE /api/v1/live-broadcasts/{code}`
+
+Requires the RADA publisher bearer token. It idempotently transitions an active row to `stopped`, revokes/removes the deterministic publisher participant and deletes the LiveKit room; a provider `404` is treated as already cleaned up. The phone separately disconnects and closes its local camera tracks. A successful provider deletion is recorded in PostgreSQL. If LiveKit is temporarily unavailable, the terminal row remains cleanup-pending. Later managed-broadcast requests retry at most five pending rooms, no sooner than 30 seconds after a room's previous attempt. Browser shutdown delivery is best effort, and later requests also expire abandoned active rows. There is no scheduled reconciliation job yet.
+
+Create, list, playback lookup, status and stop have process-local abuse limits. These are not atomic across Vercel instances; production access for more than a private test requires real staff authentication/RBAC and a distributed limiter.
+
+### Direct phone broadcast signaling fallback
+
+These routes coordinate one browser-to-browser WebRTC connection. They store bounded SDP setup messages temporarily in PostgreSQL; audio/video does not pass through these routes and is not recorded by RADA. All routes return private/no-store responses. They hard-404 unless the selected provider is `direct`; production additionally requires `PHONE_BROADCAST_ENABLED=true` and at least one authenticated TURN server through `PHONE_BROADCAST_ICE_SERVERS_JSON`.
 
 A session authorizes signaling only until its server-returned expiry, currently 30 minutes. The phone arms its lifecycle from that value rather than a client hard-coded duration. Its human-entered Crockford Base32 code has eight symbols/40 bits and is displayed as `ABCD-EFGH`; case, hyphens/whitespace and the `O/I/L` aliases are normalized. The code locates a session but is not a publisher/viewer credential. Each 256-bit URL-safe bearer token is returned only to its role, kept out of URLs and persistent browser storage, and stored in PostgreSQL only as a SHA-256 digest.
 
@@ -624,8 +709,8 @@ These are HTML routes, not JSON API contracts:
 | `/{locale}/my-sports`       | followed entities, personalized schedule and calendar export                        |
 | `/{locale}/notifications`   | in-app inbox, read state and demo notification controls                             |
 | `/{locale}/settings`        | local theme/spoiler/data-saver plus global in-app notification/account foundations  |
-| `/{locale}/broadcast`       | development-only phone camera broadcaster; production 404                           |
-| `/{locale}/broadcast/watch` | development-only one-viewer direct WebRTC receiver; production 404                  |
+| `/{locale}/broadcast`       | phone camera broadcaster; managed LiveKit or direct fallback according to provider  |
+| `/{locale}/broadcast/watch` | active-stream list/code viewer; managed LiveKit SFU or direct one-viewer mode       |
 | `/{locale}/admin`           | development-only event/source/rights/provider control room; production 404          |
 
 `locale` is `et` or `en`; unknown locale/entity slugs return the localized not-found state. Additional page routes should be added here only after they exist.
@@ -642,7 +727,7 @@ Production integration will require versioned, validated interfaces for at least
 - data export/deletion request/status/download;
 - authenticated schedule/results ingestion with provider event idempotency;
 - production-authenticated editor/operator catalogue, correction, rights, stream-provider control and audit endpoints;
-- authenticated and rights-aware contribution ingest plus Internet-capable WebRTC signaling/TURN/SFU interfaces; and
+- rights-aware event/catalogue integration, staff-authenticated contribution ingest and provider reconciliation/webhooks; and
 - internal outbox/notification delivery and provider callback endpoints.
 
 Before exposing a partner/public API, generate a complete OpenAPI document from the same runtime schemas, add cursor pagination, explicit compatibility/deprecation policy, per-client OAuth scopes, webhook signing/replay defense and contract tests. Do not expose internal Drizzle rows directly: public DTOs must keep rights contract references, raw source payloads, session/token hashes, provider IDs and audit/security data private.

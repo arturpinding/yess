@@ -1,8 +1,16 @@
 import type { NextConfig } from "next";
 
 import { validatePhoneDemoHost } from "./src/dev/phone-demo-config";
+import {
+  getLiveKitConnectSources,
+  isDemoBroadcastAvailable,
+} from "./src/server/demo-broadcast/availability";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
+const phoneBroadcastAvailable = isDemoBroadcastAvailable();
+const liveKitConnectSources = getLiveKitConnectSources()
+  .map((origin) => ` ${origin}`)
+  .join("");
 const localMediaSources = isDevelopment ? " http://127.0.0.1:8090 http://localhost:8090" : "";
 const phoneDemoHost =
   isDevelopment && process.env.PHONE_DEMO_HOST?.trim()
@@ -16,7 +24,7 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   `media-src 'self' blob: https://test-streams.mux.dev${localMediaSources}`,
-  `connect-src 'self' https://test-streams.mux.dev${localMediaSources}`,
+  `connect-src 'self' https://test-streams.mux.dev${localMediaSources}${liveKitConnectSources}`,
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
@@ -55,7 +63,7 @@ const nextConfig: NextConfig = {
             : []),
         ],
       },
-      ...(isDevelopment
+      ...(phoneBroadcastAvailable
         ? [
             {
               source: "/:locale(et|en)/broadcast",

@@ -159,6 +159,12 @@ export const demoBroadcastState = pgEnum("demo_broadcast_state", [
   "viewer_claimed",
   "connected",
 ]);
+export const liveBroadcastState = pgEnum("live_broadcast_state", [
+  "provisioned",
+  "live",
+  "stopped",
+  "failed",
+]);
 
 const timestamps = () => ({
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
@@ -321,6 +327,65 @@ export const demoBroadcasts = pgTable(
         or (${table.state} = 'offer_ready' and ${table.offerSdp} is not null and ${table.viewerTokenHash} is null and ${table.answerSdp} is null)
         or (${table.state} = 'viewer_claimed' and ${table.offerSdp} is not null and ${table.viewerTokenHash} is not null and ${table.answerSdp} is null)
         or (${table.state} = 'connected' and ${table.offerSdp} is not null and ${table.viewerTokenHash} is not null and ${table.answerSdp} is not null)
+      )`,
+    ),
+  ],
+);
+
+/**
+ * Managed, one-to-many phone broadcasts. Provider API credentials and
+ * participant tokens are deliberately never persisted here.
+ */
+export const liveBroadcasts = pgTable(
+  "live_broadcasts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: char("code", { length: 8 }).notNull(),
+    title: varchar("title", { length: 120 }).notNull(),
+    locale: varchar("locale", { length: 5 }).notNull(),
+    state: liveBroadcastState("state").default("provisioned").notNull(),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    providerInputId: varchar("provider_input_id", { length: 160 }).notNull(),
+    playbackUrl: text("playback_url").notNull(),
+    publisherTokenHash: char("publisher_token_hash", { length: 64 }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
+    endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+    providerDeletedAt: timestamp("provider_deleted_at", { withTimezone: true, mode: "date" }),
+    version: integer("version").default(1).notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("live_broadcasts_code_unique").on(table.code),
+    uniqueIndex("live_broadcasts_provider_input_unique").on(table.provider, table.providerInputId),
+    index("live_broadcasts_state_expiry_idx").on(table.state, table.expiresAt),
+    index("live_broadcasts_provider_cleanup_idx").on(table.state, table.providerDeletedAt),
+    check("live_broadcasts_code_check", sql`${table.code} ~ '^[0-9A-HJKMNP-TV-Z]{8}$'`),
+    check("live_broadcasts_title_check", sql`char_length(btrim(${table.title})) between 1 and 120`),
+    check("live_broadcasts_locale_check", sql`${table.locale} in ('et', 'en')`),
+    check(
+      "live_broadcasts_provider_check",
+      sql`${table.provider} in ('cloudflare-stream', 'livekit-cloud')`,
+    ),
+    check(
+      "live_broadcasts_publisher_hash_check",
+      sql`${table.publisherTokenHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "live_broadcasts_playback_url_check",
+      sql`(
+        (${table.provider} = 'cloudflare-stream' and ${table.playbackUrl} like 'https://%')
+        or (${table.provider} = 'livekit-cloud' and ${table.playbackUrl} like 'wss://%')
+      )`,
+    ),
+    check("live_broadcasts_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
+    check("live_broadcasts_version_check", sql`${table.version} > 0`),
+    check(
+      "live_broadcasts_state_times_check",
+      sql`(
+        (${table.state} = 'provisioned' and ${table.startedAt} is null and ${table.endedAt} is null)
+        or (${table.state} = 'live' and ${table.startedAt} is not null and ${table.endedAt} is null)
+        or (${table.state} in ('stopped', 'failed') and ${table.endedAt} is not null)
       )`,
     ),
   ],
@@ -1274,3 +1339,4 @@ export type RightsWindow = typeof rightsWindows.$inferSelect;
 export type Follow = typeof follows.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type DemoBroadcast = typeof demoBroadcasts.$inferSelect;
+export type LiveBroadcast = typeof liveBroadcasts.$inferSelect;

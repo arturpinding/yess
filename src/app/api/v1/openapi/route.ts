@@ -116,11 +116,11 @@ const document = {
       post: {
         summary: "Create a short-lived direct-device demo broadcast",
         description:
-          "Development only. Creates a 30-minute WebRTC signaling room; camera media travels directly between browsers and is not uploaded here.",
+          "Development by default; production requires explicit protected-test opt-in. Creates a 30-minute WebRTC signaling room; camera media travels between browsers directly or through configured TURN and is not uploaded here.",
         responses: {
           "201": { description: "Room code and publisher bearer credential created" },
           "403": { description: "Same-origin CSRF proof required" },
-          "404": { description: "Disabled in production" },
+          "404": { description: "Disabled by production default" },
           "429": { description: "Rate limited" },
         },
       },
@@ -128,7 +128,7 @@ const document = {
     "/api/v1/demo-broadcasts/{code}/offer": {
       post: {
         summary: "Store the publisher WebRTC offer",
-        description: "Development only. Requires the publisher bearer credential.",
+        description: "Test-only. Requires the publisher bearer credential.",
         parameters: [
           {
             name: "code",
@@ -151,7 +151,7 @@ const document = {
     "/api/v1/demo-broadcasts/{code}/viewer": {
       post: {
         summary: "Claim the single viewer slot and retrieve the offer",
-        description: "Development only. Requires same-origin CSRF proof.",
+        description: "Test-only. Requires same-origin CSRF proof.",
         responses: {
           "201": { description: "Viewer credential and publisher offer returned" },
           "403": { description: "Same-origin CSRF proof required" },
@@ -163,7 +163,7 @@ const document = {
     "/api/v1/demo-broadcasts/{code}/answer": {
       post: {
         summary: "Store the viewer WebRTC answer",
-        description: "Development only. Requires the viewer bearer credential.",
+        description: "Test-only. Requires the viewer bearer credential.",
         responses: {
           "200": { description: "Answer accepted idempotently" },
           "401": { description: "Invalid viewer credential" },
@@ -172,7 +172,7 @@ const document = {
       },
       get: {
         summary: "Poll for the viewer WebRTC answer",
-        description: "Development only. Requires the publisher bearer credential.",
+        description: "Test-only. Requires the publisher bearer credential.",
         responses: {
           "200": { description: "Current answer and room state returned with no-store caching" },
           "401": { description: "Invalid publisher credential" },
@@ -183,11 +183,68 @@ const document = {
     "/api/v1/demo-broadcasts/{code}": {
       delete: {
         summary: "End and delete a direct-device demo broadcast",
-        description: "Development only. Requires the publisher bearer credential.",
+        description: "Test-only. Requires the publisher bearer credential.",
         responses: {
           "200": { description: "Room and retained signaling data deleted" },
           "401": { description: "Invalid publisher credential" },
           "404": { description: "Room not found or feature disabled" },
+        },
+      },
+    },
+    "/api/v1/live-broadcasts": {
+      get: {
+        summary: "List active managed phone broadcasts",
+        description:
+          "LiveKit Cloud provider only. Returns public summaries without publishing capabilities.",
+        responses: {
+          "200": { description: "Active broadcast summaries" },
+          "404": { description: "Managed broadcasting disabled" },
+          "429": { description: "Rate limited" },
+        },
+      },
+      post: {
+        summary: "Create a managed LiveKit Cloud phone broadcast",
+        description:
+          "Requires same-origin CSRF and the configured broadcaster access key. Returns the app publisher bearer plus a short-lived, publish-only LiveKit room token.",
+        responses: {
+          "201": { description: "Live input, room code and publisher capability created" },
+          "401": { description: "Invalid broadcaster access key" },
+          "403": { description: "Same-origin CSRF proof required" },
+          "404": { description: "Managed broadcasting disabled" },
+          "503": { description: "Streaming provider unavailable" },
+        },
+      },
+    },
+    "/api/v1/live-broadcasts/{code}": {
+      get: {
+        summary: "Resolve a managed broadcast for LiveKit playback",
+        description:
+          "Does not claim a viewer slot. Returns a fresh, short-lived, subscribe-only LiveKit room token.",
+        responses: {
+          "200": { description: "LiveKit URL and scoped viewer token" },
+          "404": { description: "Broadcast not found or feature disabled" },
+          "410": { description: "Broadcast expired or ended" },
+        },
+      },
+      delete: {
+        summary: "Stop a managed broadcast and delete its LiveKit room",
+        description: "Requires the publisher bearer credential; repeated stop is idempotent.",
+        responses: {
+          "200": { description: "Broadcast stopped" },
+          "401": { description: "Invalid publisher credential" },
+          "404": { description: "Broadcast not found or feature disabled" },
+        },
+      },
+    },
+    "/api/v1/live-broadcasts/{code}/status": {
+      post: {
+        summary: "Mark a managed broadcast live after LiveKit connects",
+        description:
+          "Requires the app publisher bearer credential and is called only after the phone has joined and published its media.",
+        responses: {
+          "200": { description: "Live state accepted idempotently" },
+          "401": { description: "Invalid publisher credential" },
+          "410": { description: "Broadcast expired or ended" },
         },
       },
     },

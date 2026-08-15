@@ -9,6 +9,7 @@ import {
   requireDemoBroadcastCsrf,
 } from "@/server/demo-broadcast/request";
 import { demoBroadcastService } from "@/server/demo-broadcast/service";
+import { getDemoBroadcastIceServers } from "@/server/demo-broadcast/ice-config";
 import { privateJson } from "@/server/http/api-response";
 
 export const runtime = "nodejs";
@@ -32,7 +33,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ co
   }
 
   try {
-    const data = await demoBroadcastService.claimViewer(code);
+    const data = {
+      ...(await demoBroadcastService.claimViewer(code)),
+      iceServers: getDemoBroadcastIceServers(),
+    };
     return privateJson({ data }, { status: 201, headers: rateLimit.headers });
   } catch (error) {
     return demoBroadcastErrorResponse(error, rateLimit.headers);

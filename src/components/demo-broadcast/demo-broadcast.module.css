@@ -296,6 +296,7 @@
 }
 
 .field label,
+.field > span,
 .urlField > span,
 .codeField > span {
   color: var(--muted);
@@ -306,6 +307,7 @@
 }
 
 .field select,
+.field input,
 .urlField input,
 .codeField input {
   width: 100%;
@@ -317,8 +319,100 @@
 }
 
 .field select:disabled,
+.field input:disabled,
 .codeField input:disabled {
   opacity: 0.66;
+}
+
+.field small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.viewerControls {
+  display: grid;
+  gap: 18px;
+}
+
+.listHeading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.listHeading > div > p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.iconAction {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.broadcastList {
+  display: grid;
+  gap: 8px;
+}
+
+.broadcastCard {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.broadcastCard:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-strong);
+}
+
+.broadcastCard > span {
+  display: grid;
+  gap: 3px;
+}
+
+.broadcastCard small {
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.broadcastCard em {
+  color: var(--warning);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 780;
+  letter-spacing: 0.06em;
+}
+
+.broadcastCard em[data-live="true"] {
+  color: var(--live);
+}
+
+.emptyList {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .activeControls {

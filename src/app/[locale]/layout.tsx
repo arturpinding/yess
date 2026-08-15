@@ -5,6 +5,7 @@ import { PreferencesProvider } from "@/components/preferences-provider";
 import { SessionBootstrap } from "@/components/session-bootstrap";
 import { isLocale, locales } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
+import { isDemoBroadcastAvailable } from "@/server/demo-broadcast/availability";
 
 export function generateStaticParams() {
   return locales.map((locale) => ({ locale }));
@@ -38,7 +39,11 @@ export default async function LocaleLayout({
       initialDataSaver={initialDataSaver}
     >
       <SessionBootstrap />
-      <AppShell locale={localeParam} dictionary={dictionary}>
+      <AppShell
+        locale={localeParam}
+        dictionary={dictionary}
+        broadcastAvailable={isDemoBroadcastAvailable()}
+      >
         {children}
       </AppShell>
     </PreferencesProvider>

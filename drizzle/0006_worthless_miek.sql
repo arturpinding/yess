@@ -1,0 +1,2 @@
+ALTER TABLE "live_broadcasts" ADD COLUMN "provider_deleted_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "live_broadcasts_provider_cleanup_idx" ON "live_broadcasts" USING btree ("state","provider_deleted_at");

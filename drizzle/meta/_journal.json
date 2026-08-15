@@ -36,6 +36,27 @@
       "when": 1786723257878,
       "tag": "0004_dark_paper_doll",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786777382964,
+      "tag": "0005_blue_sharon_carter",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786779305204,
+      "tag": "0006_worthless_miek",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786783017470,
+      "tag": "0007_damp_sinister_six",
+      "breakpoints": true
     }
   ]
 }

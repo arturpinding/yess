@@ -16,7 +16,7 @@ The repository currently contains:
 - a player abstraction that can select WHEP/WebRTC, LL-HLS, HLS or an official external destination, with ABR/manual quality, data saver, recovery/fallback, live edge, rights-controlled DVR, captions/audio controls, PiP, fullscreen, keyboard controls and privacy-conscious telemetry hooks;
 - a development-only control room with real PostgreSQL mutations for event metadata, playback sources and technical rights policies, including guarded emergency unavailability and deletion, reasons, before/after audit records, optimistic concurrency, confirmations, CSRF and local rate limits;
 - a loopback-only development media-provider service that starts FFmpeg over generated test video/audio, produces and serves an HLS playlist, and supports provision/start/publish/unpublish/stop/refresh through durable idempotent provider operations;
-- a development-only, one-viewer phone-camera demo that exchanges ephemeral WebRTC setup data through RADA while video and audio travel directly between two browsers on the same trusted LAN; and
+- a phone-camera path with a local one-viewer WebRTC fallback plus an opt-in LiveKit Cloud SFU mode for a Vercel-hosted broadcaster page and multiple simultaneous viewers; and
 - structured/redacted logs, liveness/readiness conventions, container build, CI, coverage thresholds, Playwright mobile/desktop projects and production design/runbooks.
 
 The user-facing page/API inventory is documented in [docs/api.md](docs/api.md). The local media controls call only the repository's synthetic FFmpeg service; they do not call a real broadcaster, CDN, payment or notification provider.
@@ -110,7 +110,13 @@ A fresh browser's first server render is anonymous and receives an intentionally
 
 ### Phone camera to computer demo
 
-This is a separate development path from the admin-controlled synthetic FFmpeg/HLS provider. It does not use port 8090, create an event stream in the catalogue, pass through FFmpeg, or record media on the server.
+This is separate from the admin-controlled synthetic FFmpeg/HLS provider. It does not use port 8090, create an event stream in the catalogue or pass through FFmpeg.
+
+For the Internet/Vercel path, set `PHONE_BROADCAST_ENABLED=true`, `PHONE_BROADCAST_PROVIDER=livekit-cloud`, `PHONE_BROADCAST_ACCESS_KEY`, `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`. Apply migrations `0005`, `0006` and `0007` to the deployed PostgreSQL database. Vercel serves the pages, authorizes the broadcaster and issues narrowly scoped LiveKit room tokens; the phone and viewers send and receive media through LiveKit Cloud's SFU, never through the Next.js process. The devices can therefore use unrelated networks. See [the exact Vercel setup](docs/deployment.md#managed-phone-broadcasting-on-vercel).
+
+After deployment, open `https://YOUR-DOMAIN/et/broadcast` on the phone, enter the configured broadcaster key and start. On the computer, open `https://YOUR-DOMAIN/et/broadcast/watch` and select the match, or use the link/code displayed on the phone. The viewing page lists active broadcasts and does not claim a single-viewer slot.
+
+The following LAN workflow remains the default `direct` development fallback.
 
 After the normal database setup, run this **instead of** `npm run dev`:
 
@@ -127,7 +133,9 @@ The launcher selects an active private IPv4 address, creates or reuses a short-l
 5. The phone progresses through Waiting, Connecting and Live. One viewer can join; the phone can mute its microphone or stop, and the viewer can leave.
 6. After the demo, stop the launcher. Remove **RADA Phone Demo CA** from Android and from the computer/browser if you imported it; also remove any saved browser exception.
 
-TCP ports 3000 and 3080 must be reachable from the phone. Guest Wi-Fi/client isolation, a VPN, host firewall rules or different networks can prevent HTTPS, signaling or direct WebRTC host-candidate connectivity. There is deliberately no STUN or TURN relay, so this demo is not expected to cross NATs. See [the detailed Android, firewall, certificate and USB workflow](docs/deployment.md#phone-camera-lan-demo).
+TCP ports 3000 and 3080 must be reachable from the phone. Guest Wi-Fi/client isolation, a VPN, host firewall rules or different networks can prevent HTTPS, signaling or direct WebRTC host-candidate connectivity. The default local configuration has no STUN or TURN relay, so it is not expected to cross NATs. See [the detailed Android, firewall, certificate and USB workflow](docs/deployment.md#phone-camera-lan-demo).
+
+Production builds return 404 for all broadcast pages and APIs unless `PHONE_BROADCAST_ENABLED=true`. The `direct` provider still requires authenticated TURN in production. The `livekit-cloud` provider instead requires the LiveKit project URL, API key, API secret and broadcaster key; it does not use `PHONE_BROADCAST_ICE_SERVERS_JSON`.
 
 The server-returned expiry is 30 minutes. At expiry the phone stops its camera/microphone and peer connection and attempts to delete the signaling row. Stop, navigation and browser shutdown also attempt deletion, but shutdown delivery is inherently best-effort. If deletion does not arrive, the expired row is denied immediately and is purged by the next development signaling request; there is no independent periodic cleanup job. Until that later request, bounded offer/answer SDP—including peer host candidates—can remain in the local PostgreSQL database.
 
@@ -207,7 +215,9 @@ Do not replace a seed URL with a sports broadcast unless the organization has co
 
 ## Verification record
 
-Recorded on **2026-08-14** against the final documented tree. A passing build or browser flow is not playback-latency evidence.
+The managed LiveKit path has automated provider, API and phone/viewer component coverage with controlled fakes. No real LiveKit Cloud room, phone-to-SFU session or Vercel deployment is part of those tests, so deployed browser compatibility, latency, quota use and cleanup remain unverified until they are exercised with the configured project.
+
+Core checks were rerun on **2026-08-15** for the LiveKit change. Rows with older fixture counts describe the retained 2026-08-14 baseline and were not all rerun for this change. A passing build or browser flow is not playback-latency evidence.
 
 | Check                                | Command/environment                          | Observed result                                                                                                                                         |
 | ------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -217,13 +227,13 @@ Recorded on **2026-08-14** against the final documented tree. A passing build or
 | Formatting                           | `npm run format:check`                       | Pass                                                                                                                                                    |
 | Lint                                 | `npm run lint`                               | Pass, zero warnings                                                                                                                                     |
 | Static types                         | `npm run typecheck`                          | Pass                                                                                                                                                    |
-| Unit/integration                     | `npm test`                                   | Pass; 50 files, 223 tests                                                                                                                               |
+| Unit/integration                     | `npm test`                                   | Pass; 56 files, 267 tests                                                                                                                               |
 | Coverage gate                        | `npm run test:coverage`                      | Pass; statements 76.09%, branches 67.98%, functions 78.26%, lines 79.12%; all 223 tests pass                                                            |
 | Migration + repeat seed              | local PostgreSQL 17                          | Pass; 36 application tables, no migration/schema drift detected, migrations reapplied and repeat seed completed                                         |
 | In-app planning/delivery idempotency | isolated PostgreSQL planner/worker cycles    | First cycle inserted 5 and delivered 2 due rows; identical retry inserted 0 and delivered 0. This is a functional check, not delivery-latency evidence  |
-| Native production build              | `npm run build`                              | Pass; all 36 application/API routes generated, including the direct-device signaling and admin routes                                                   |
+| Native production build              | `npm run build`                              | Pass with both the default direct provider and `livekit-cloud` selected using dummy build-only credentials; all 36 application/API routes generated     |
 | Container image                      | Docker build and image/filesystem inspection | Pass; 83,590,236 bytes, runtime user `nextjs`, and no `.env`, local certificates/media, Playwright or test-result artifacts found                       |
-| Runtime health and production guard  | final container on local port 3100           | Pass; liveness 200, readiness/database 200, English home 200; production admin, broadcaster, viewer and signaling API all returned 404                  |
+| Runtime health and default guard     | final container on local port 3100           | Pass; liveness 200, readiness/database 200, English home 200; production admin and default-disabled broadcaster/viewer/signaling routes returned 404    |
 | Desktop/mobile browser flow          | Playwright Desktop Chrome + Pixel 7          | 18 passed, 6 intentional duplicate-mobile mutation skips in 2.7 min; axe, spoiler, player, follows, notifications, admin and direct WebRTC included     |
 | Direct phone-camera flow             | Pixel 7 emulation → separate desktop context | Pass in 15.8 s; real `getUserMedia`, WebRTC negotiation, nonzero decoded video and a live track; Stop deleted the room and the code then returned 404   |
 | Secure LAN signaling                 | `dev:phone` + trusted-CA HTTPS probe         | Pass; create 201, offer 200, viewer 201, answer 200, connected poll 200, delete 200, repeat viewer claim 404; zero retained signaling rows afterward    |
@@ -280,7 +290,7 @@ The development admin page and mutation APIs are hard-404ed in production. They 
 - This is a web demo with anonymous SSR plus one development-only, session-owned seeded profile, not completed registration/login/recovery or multi-device profile synchronization.
 - Seed schedules use relative times at first insertion and are not connected to an authoritative live provider.
 - WebRTC and LL-HLS are player/interface capabilities; local seed and generated playback are standard HLS and do not exercise real protocol failover.
-- The phone-camera demo is a separate one-viewer, same-LAN browser WebRTC path with host candidates only. It is not event ingest, a CDN/player source, recording, transcoding, multi-viewer distribution or a production broadcasting service.
+- Managed phone broadcasting uses LiveKit Cloud rooms and short-lived publish-only/subscribe-only participant tokens. This repository does not enable recording or Egress, and the free Build plan's included WebRTC participant minutes and downstream transfer are hard caps. The local `direct` fallback remains one-viewer browser WebRTC and depends on host candidates or configured STUN/TURN.
 - HLS playback is unsigned in local development. There is no media-edge token verifier, geo-IP, DRM/license server or shared concurrency lease.
 - Payments, plans and entitlements have data/policy foundations but no money movement or provider webhook.
 - The PostgreSQL planner/worker implements starting-soon, started and followed-athlete in-app notices with scoped/global preference precedence and idempotent inserts. Schedule/venue-change and result/highlight rules exist but are not connected to an authoritative feed trigger; push/email delivery is absent.

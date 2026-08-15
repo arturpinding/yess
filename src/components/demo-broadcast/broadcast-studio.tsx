@@ -241,9 +241,7 @@ export function BroadcastStudio({ locale, copy: d }: { locale: Locale; copy: Bro
       }
       scheduleExpiry();
 
-      // Same-network host candidates only. Production must inject owned
-      // STUN/TURN infrastructure instead of hard-coding a public relay.
-      const peer = new RTCPeerConnection({ iceServers: [] });
+      const peer = new RTCPeerConnection({ iceServers: created.iceServers });
       peerRef.current = peer;
       stream.getTracks().forEach((track) => peer.addTrack(track, stream));
 

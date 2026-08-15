@@ -64,10 +64,12 @@ export function AppShell({
   children,
   locale,
   dictionary: d,
+  broadcastAvailable,
 }: {
   children: React.ReactNode;
   locale: Locale;
   dictionary: Dictionary;
+  broadcastAvailable: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -137,27 +139,27 @@ export function AppShell({
         </nav>
 
         <div className="rail-footer">
+          {broadcastAvailable && (
+            <ShellLink
+              className="nav-link quiet"
+              currentPathname={pathname}
+              href={`/${locale}/broadcast`}
+            >
+              <Radio size={18} strokeWidth={1.8} aria-hidden="true" />
+              <span>{d.navBroadcast}</span>
+              <span className="demo-dot" title={d.demoOnly} />
+            </ShellLink>
+          )}
           {process.env.NODE_ENV !== "production" && (
-            <>
-              <ShellLink
-                className="nav-link quiet"
-                currentPathname={pathname}
-                href={`/${locale}/broadcast`}
-              >
-                <Radio size={18} strokeWidth={1.8} aria-hidden="true" />
-                <span>{d.navBroadcast}</span>
-                <span className="demo-dot" title={d.demoOnly} />
-              </ShellLink>
-              <ShellLink
-                className="nav-link quiet"
-                currentPathname={pathname}
-                href={`/${locale}/admin`}
-              >
-                <ShieldCheck size={18} strokeWidth={1.8} aria-hidden="true" />
-                <span>{d.navAdmin}</span>
-                <span className="demo-dot" title={d.demoOnly} />
-              </ShellLink>
-            </>
+            <ShellLink
+              className="nav-link quiet"
+              currentPathname={pathname}
+              href={`/${locale}/admin`}
+            >
+              <ShieldCheck size={18} strokeWidth={1.8} aria-hidden="true" />
+              <span>{d.navAdmin}</span>
+              <span className="demo-dot" title={d.demoOnly} />
+            </ShellLink>
           )}
           <ShellLink
             className="profile-chip"
@@ -209,27 +211,27 @@ export function AppShell({
           </ShellLink>
 
           <div className="top-actions">
+            {broadcastAvailable && (
+              <ShellLink
+                className="icon-button mobile-admin-link"
+                currentPathname={pathname}
+                href={`/${locale}/broadcast`}
+                aria-label={d.navBroadcast}
+                title={d.navBroadcast}
+              >
+                <Radio size={18} aria-hidden="true" />
+              </ShellLink>
+            )}
             {process.env.NODE_ENV !== "production" && (
-              <>
-                <ShellLink
-                  className="icon-button mobile-admin-link"
-                  currentPathname={pathname}
-                  href={`/${locale}/broadcast`}
-                  aria-label={d.navBroadcast}
-                  title={d.navBroadcast}
-                >
-                  <Radio size={18} aria-hidden="true" />
-                </ShellLink>
-                <ShellLink
-                  className={`icon-button mobile-admin-link ${broadcastShellStyles.mobileAdmin}`}
-                  currentPathname={pathname}
-                  href={`/${locale}/admin`}
-                  aria-label={d.controlRoom}
-                  title={d.controlRoom}
-                >
-                  <ShieldCheck size={18} aria-hidden="true" />
-                </ShellLink>
-              </>
+              <ShellLink
+                className={`icon-button mobile-admin-link ${broadcastShellStyles.mobileAdmin}`}
+                currentPathname={pathname}
+                href={`/${locale}/admin`}
+                aria-label={d.controlRoom}
+                title={d.controlRoom}
+              >
+                <ShieldCheck size={18} aria-hidden="true" />
+              </ShellLink>
             )}
             <button
               className="icon-button spoiler-toggle"
