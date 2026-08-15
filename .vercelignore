@@ -1,0 +1,4 @@
+# Environment files contain machine-local settings and secrets. Vercel runtime
+# configuration must come from the project's Environment Variables instead.
+.env
+.env.*
